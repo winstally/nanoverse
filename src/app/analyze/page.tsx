@@ -313,13 +313,10 @@ function AnalyzeTool() {
           let n = 1
           while (seen.has(id)) id = `${t.id}-${n++}`
           seen.add(id)
-          return { ...t, id }
+          // Newly-loaded traces overlay on top of whatever is already shown.
+          return { ...t, id, visible: true }
         })
-        const all = [...prev, ...added]
-        // Single-active: exactly one trace is shown (and is the fit target).
-        // Keep the previously-active one, otherwise activate the first.
-        const activeId = prev.find((t) => t.visible)?.id ?? all[0]?.id
-        return all.map((t) => ({ ...t, visible: t.id === activeId }))
+        return [...prev, ...added]
       })
 
       // Don't silently cut data: while the FP search range is still the factory
@@ -351,20 +348,16 @@ function AnalyzeTool() {
     setTraces((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)))
   }, [])
 
-  // Single-active selection: clicking a trace activates it and deactivates the
-  // rest, so exactly one graph is shown and is the unambiguous fit target.
+  // Independent visibility: traces overlay freely. Clicking a trace toggles only
+  // that trace, so any combination can be shown at once.
   const handleToggle = React.useCallback((id: string) => {
-    setTraces((prev) => prev.map((t) => ({ ...t, visible: t.id === id })))
+    setTraces((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)),
+    )
   }, [])
 
   const handleRemove = React.useCallback((id: string) => {
-    setTraces((prev) => {
-      const next = prev.filter((t) => t.id !== id)
-      if (next.length > 0 && !next.some((t) => t.visible)) {
-        return next.map((t, i) => ({ ...t, visible: i === 0 }))
-      }
-      return next
-    })
+    setTraces((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
   const handleColor = React.useCallback((id: string, color: string) => {
@@ -419,22 +412,22 @@ function AnalyzeTool() {
     return { x: base.x.slice(), y: fy, color: FIT_COLOR }
   }, [overlay, results, plotTraces, model])
 
-  const firstVisible = plotTraces[0]
-  const canFit = !!firstVisible && firstVisible.x.length >= 3
-
-  // FP operates on the FIRST visible trace's RAW wavelength (nm) — never the
-  // axis-transformed X. We keep the original (unmodified) trace here.
-  const firstVisibleRaw = React.useMemo<Trace | undefined>(
-    () => traces.find((t) => t.visible && t.x.length > 0),
+  // Fit target: traces overlay freely, but a fit needs exactly one curve. We
+  // pick the topmost visible trace (falling back to the topmost trace that has
+  // data). Pressing Fit narrows the display to this trace, then fits it — so the
+  // result is always unambiguous regardless of how many traces are overlaid.
+  const fitTarget = React.useMemo<Trace | undefined>(
+    () =>
+      traces.find((t) => t.visible && t.x.length > 0) ??
+      traces.find((t) => t.x.length > 0),
     [traces],
   )
-  const canFitFp = !!firstVisibleRaw && firstVisibleRaw.x.length >= 5
+  const canFit = !!fitTarget && fitTarget.x.length >= 3
+  const canFitFp = !!fitTarget && fitTarget.x.length >= 5
 
-  // FP fit applies only while its source trace is still the first visible one.
+  // FP fit applies only while its source trace is still the fit target.
   const fpFitCurrent =
-    fpFit && firstVisibleRaw && fpFit.traceId === firstVisibleRaw.id
-      ? fpFit
-      : null
+    fpFit && fitTarget && fpFit.traceId === fitTarget.id ? fpFit : null
   const fpResultFit = fpFitCurrent?.fit ?? null
   const fpMessage = fpFitCurrent?.message ?? null
 
@@ -455,7 +448,7 @@ function AnalyzeTool() {
 
   // ── Fit ───────────────────────────────────────────────────────────────────
   const handleFit = React.useCallback(() => {
-    if (!firstVisible || firstVisible.x.length < 3) {
+    if (!fitTarget || fitTarget.x.length < 3) {
       setFit({
         signature: fitSignature,
         results: [],
@@ -463,12 +456,22 @@ function AnalyzeTool() {
       })
       return
     }
+    // Narrow the overlay to the fit target so the fitted curve is unambiguous.
+    setTraces((prev) =>
+      prev.map((t) => ({ ...t, visible: t.id === fitTarget.id })),
+    )
+    // Transform the target the same way plotTraces does: baseline → normalize →
+    // X transform. Computed here (not via the async-stale derived plotTraces) so
+    // the fit always runs on the trace we just narrowed to.
+    const { x } = transformX(fitTarget.x, type, transformOpts)
+    const yBase = baseline(fitTarget.y, baselineMode, fitTarget.x)
+    const y = doNormalize ? normalize(yBase) : yBase
     setFitting(true)
     // setTimeout (not requestAnimationFrame) so the compute still runs when the
     // tab isn't painting — rAF can stall, leaving the button stuck on "フィット中…".
     setTimeout(() => {
       try {
-        const found = fitPeaks(firstVisible.x, firstVisible.y, {
+        const found = fitPeaks(x, y, {
           model,
           maxPeaks: 8,
         })
@@ -491,19 +494,34 @@ function AnalyzeTool() {
         setFitting(false)
       }
     }, 0)
-  }, [firstVisible, model, fitSignature])
+  }, [
+    fitTarget,
+    model,
+    fitSignature,
+    type,
+    transformOpts,
+    baselineMode,
+    doNormalize,
+  ])
 
   // ── FP fit ──────────────────────────────────────────────────────────────
   const handleFpFit = React.useCallback(() => {
-    if (!firstVisibleRaw || firstVisibleRaw.x.length < 5) {
+    if (!fitTarget || fitTarget.x.length < 5) {
       setFpFit({
-        traceId: firstVisibleRaw?.id ?? '',
+        traceId: fitTarget?.id ?? '',
         fit: null,
         message: 'フィット対象がありません',
       })
       return
     }
-    const traceId = firstVisibleRaw.id
+    // Narrow the overlay to the fit target so the FP markers are unambiguous.
+    setTraces((prev) =>
+      prev.map((t) => ({ ...t, visible: t.id === fitTarget.id })),
+    )
+    const traceId = fitTarget.id
+    // FP fits the RAW wavelength (nm) — never the axis-transformed X.
+    const rawX = fitTarget.x
+    const rawY = fitTarget.y
     setFpFitting(true)
     setTimeout(() => {
       try {
@@ -515,7 +533,7 @@ function AnalyzeTool() {
           maxWl: fpMaxWl,
           aFactor: fpAFactor,
         }
-        const res = fitFp(firstVisibleRaw.x, firstVisibleRaw.y, opts)
+        const res = fitFp(rawX, rawY, opts)
         if (res.ok) {
           setFpFit({ traceId, fit: res.fit, message: null })
           logEvent(`FPフィット: n_eff=${res.fit.nEff.toFixed(3)}`)
@@ -528,7 +546,7 @@ function AnalyzeTool() {
         setFpFitting(false)
       }
     }, 0)
-  }, [firstVisibleRaw, fpAdvanced, fpL, fpMinWl, fpMaxWl, fpAFactor])
+  }, [fitTarget, fpAdvanced, fpL, fpMinWl, fpMaxWl, fpAFactor])
 
   const getSvg = React.useCallback(() => svgRef.current, [])
 
@@ -714,11 +732,7 @@ function AnalyzeTool() {
       {/* CENTER: the publication plot only */}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background p-4">
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md border border-border bg-card p-3">
-          {plotTraces.length === 0 ? (
-            <span className="text-xs text-muted-foreground">
-              スペクトルを読み込むと表示されます
-            </span>
-          ) : (
+          {plotTraces.length === 0 ? null : (
             <PlotView
               ref={svgRef}
               traces={plotTraces}
