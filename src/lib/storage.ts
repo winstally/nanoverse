@@ -2,6 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { MaskDocument } from '@/modules/mask/document'
 import type { Trace, MeasurementType } from '@/modules/analyze/types'
 import type { PlotStyle } from '@/modules/analyze/plot/preset'
+import { parseMaskDoc, parseAnalyzeSession } from './schemas'
 
 export interface AnalyzeSession {
   id: string
@@ -80,14 +81,20 @@ export async function saveMaskDoc(
 export async function listMaskDocs(): Promise<StoredMaskDocument[]> {
   const db = await getDb()
   const all = await db.getAll('maskDocs')
-  return byUpdatedAtDesc(all)
+  // Validate each record; drop genuinely corrupt ones so the list can't crash.
+  const valid = all
+    .map((rec) => parseMaskDoc(rec))
+    .filter((rec): rec is StoredMaskDocument => rec !== null)
+  return byUpdatedAtDesc(valid)
 }
 
 export async function loadMaskDoc(
   id: string
 ): Promise<StoredMaskDocument | undefined> {
   const db = await getDb()
-  return db.get('maskDocs', id)
+  const rec = await db.get('maskDocs', id)
+  if (rec === undefined) return undefined
+  return parseMaskDoc(rec) ?? undefined
 }
 
 export async function deleteMaskDoc(id: string): Promise<void> {
@@ -108,14 +115,20 @@ export async function saveAnalyzeSession(
 export async function listAnalyzeSessions(): Promise<AnalyzeSession[]> {
   const db = await getDb()
   const all = await db.getAll('analyzeSessions')
-  return byUpdatedAtDesc(all)
+  // Validate each record; drop genuinely corrupt ones so the list can't crash.
+  const valid = all
+    .map((rec) => parseAnalyzeSession(rec))
+    .filter((rec): rec is AnalyzeSession => rec !== null)
+  return byUpdatedAtDesc(valid)
 }
 
 export async function loadAnalyzeSession(
   id: string
 ): Promise<AnalyzeSession | undefined> {
   const db = await getDb()
-  return db.get('analyzeSessions', id)
+  const rec = await db.get('analyzeSessions', id)
+  if (rec === undefined) return undefined
+  return parseAnalyzeSession(rec) ?? undefined
 }
 
 export async function deleteAnalyzeSession(id: string): Promise<void> {

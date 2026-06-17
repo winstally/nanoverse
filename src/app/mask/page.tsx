@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryState } from 'nuqs'
 import { Download } from 'lucide-react'
 import { Calibration, defaultCalibration } from '@/modules/mask/calibration'
 import {
@@ -40,7 +41,7 @@ import { toast } from 'sonner'
 
 const initialCal = defaultCalibration()
 
-export default function MaskPage() {
+function MaskTool() {
   const [cal, setCal] = useState<Calibration>(initialCal)
   const [doc, setDoc] = useState<MaskDocument>(() =>
     createDefaultDocument(initialCal),
@@ -48,6 +49,9 @@ export default function MaskPage() {
   const [tool, setTool] = useState<ToolKind>('select')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [savedDocs, setSavedDocs] = useState<ProjectSwitcherItem[]>([])
+
+  // URL sync: ?project=<id> mirrors the currently open document.
+  const [projectParam, setProjectParam] = useQueryState('project')
 
   const selected = doc.shapes.find((s) => s.id === selectedId) ?? null
 
@@ -116,6 +120,30 @@ export default function MaskPage() {
     setDoc((d) => ({ ...d, name }))
   }, [])
 
+  // Apply a loaded document to local state. Shared by handleSelect (user click)
+  // and the URL → state hydration effect. Caller logs/sets the URL param.
+  const applyLoadedDoc = useCallback((loaded: Awaited<ReturnType<typeof loadMaskDoc>>) => {
+    if (!loaded) return
+    // Drop persistence metadata (updatedAt) — keep only MaskDocument fields.
+    const next: MaskDocument = {
+      id: loaded.id,
+      name: loaded.name,
+      widthUm: loaded.widthUm,
+      heightUm: loaded.heightUm,
+      shapes: loaded.shapes,
+      polarity: loaded.polarity,
+    }
+    setDoc(next)
+    setCal((c) => ({
+      ...c,
+      substrateWUm: next.widthUm,
+      substrateHUm: next.heightUm,
+    }))
+    setSelectedId(null)
+    setTool('select')
+    return next
+  }, [])
+
   const handleSelect = useCallback(
     async (id: string) => {
       const loaded = await loadMaskDoc(id)
@@ -123,26 +151,13 @@ export default function MaskPage() {
         toast.error('プロジェクトを読み込めませんでした')
         return
       }
-      // Drop persistence metadata (updatedAt) — keep only MaskDocument fields.
-      const next: MaskDocument = {
-        id: loaded.id,
-        name: loaded.name,
-        widthUm: loaded.widthUm,
-        heightUm: loaded.heightUm,
-        shapes: loaded.shapes,
-        polarity: loaded.polarity,
+      const next = applyLoadedDoc(loaded)
+      if (next) {
+        void setProjectParam(next.id)
+        logEvent(`マスク「${next.name}」を読み込みました`)
       }
-      setDoc(next)
-      setCal((c) => ({
-        ...c,
-        substrateWUm: next.widthUm,
-        substrateHUm: next.heightUm,
-      }))
-      setSelectedId(null)
-      setTool('select')
-      logEvent(`マスク「${next.name}」を読み込みました`)
     },
-    [],
+    [applyLoadedDoc, setProjectParam],
   )
 
   const handleCreateNew = useCallback(() => {
@@ -151,8 +166,11 @@ export default function MaskPage() {
     setCal(defaultCalibration())
     setSelectedId(null)
     setTool('select')
+    // Clear the URL param; autosave + the state→URL effect will set it once the
+    // fresh doc is persisted and appears in the saved list.
+    void setProjectParam(null)
     logEvent('新規マスクを作成しました')
-  }, [])
+  }, [setProjectParam])
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -165,6 +183,41 @@ export default function MaskPage() {
     },
     [doc.id, handleCreateNew, refreshList],
   )
+
+  // --- URL ⇄ state ---------------------------------------------------------
+  // URL → state (ONCE on mount): if ?project points at a stored doc that isn't
+  // the current one, load it asynchronously. The setState happens inside the
+  // .then callback (not the effect body), so it does not cascade.
+  const hydratedFromUrl = useRef(false)
+  useEffect(() => {
+    if (hydratedFromUrl.current) return
+    hydratedFromUrl.current = true
+    if (!projectParam || projectParam === doc.id) return
+    const target = projectParam
+    loadMaskDoc(target)
+      .then((loaded) => {
+        if (loaded) {
+          applyLoadedDoc(loaded)
+          logEvent(`マスク「${loaded.name}」を読み込みました`)
+        } else {
+          // Unknown id — drop the stale param, keep the current new doc.
+          void setProjectParam(null)
+        }
+      })
+      .catch(() => {
+        // Load failures are non-fatal; keep the current document.
+      })
+  }, [projectParam, doc.id, applyLoadedDoc, setProjectParam])
+
+  // state → URL: once the current doc is persisted (present in the saved list),
+  // reflect its id in the URL. Equality guard keeps this loop-free. Updating the
+  // URL (an external system) from an effect is allowed.
+  useEffect(() => {
+    const persisted = savedDocs.some((d) => d.id === doc.id)
+    if (persisted && projectParam !== doc.id) {
+      void setProjectParam(doc.id)
+    }
+  }, [savedDocs, doc.id, projectParam, setProjectParam])
 
   // --- Export --------------------------------------------------------------
   const handleExport = useCallback(() => {
@@ -263,5 +316,16 @@ export default function MaskPage() {
         />
       </section>
     </ToolLayout>
+  )
+}
+
+// `MaskTool` consumes the URL search params via nuqs' `useQueryState`, which
+// relies on `useSearchParams()`. Next.js requires that consumer to sit under a
+// <Suspense> boundary so the rest of the route can still be prerendered.
+export default function MaskPage() {
+  return (
+    <Suspense fallback={null}>
+      <MaskTool />
+    </Suspense>
   )
 }

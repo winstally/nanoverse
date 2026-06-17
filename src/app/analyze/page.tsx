@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQueryState } from 'nuqs'
 import { toast } from 'sonner'
 import { FileDrop } from '@/modules/analyze/components/FileDrop'
 import { TraceList } from '@/modules/analyze/components/TraceList'
@@ -64,11 +65,14 @@ function freshSession(): AnalyzeSession {
   }
 }
 
-export default function AnalyzePage() {
+function AnalyzeTool() {
   // ── Session identity ──────────────────────────────────────────────────────
   const [sessionId, setSessionId] = React.useState<string>(() => newSessionId())
   const [sessionName, setSessionName] = React.useState<string>('新規プロジェクト')
   const [sessions, setSessions] = React.useState<AnalyzeSession[]>([])
+
+  // URL sync: ?project=<id> mirrors the currently open session.
+  const [projectParam, setProjectParam] = useQueryState('project')
 
   // ── Document state ────────────────────────────────────────────────────────
   const [traces, setTraces] = React.useState<Trace[]>([])
@@ -205,18 +209,22 @@ export default function AnalyzePage() {
         const s = await loadAnalyzeSession(id)
         if (s) {
           applySession(s)
+          void setProjectParam(s.id)
           logEvent(`解析セッションを読み込み: ${s.name}`)
         }
       } catch {
         toast.error('プロジェクトの読み込みに失敗しました')
       }
     },
-    [sessionId, applySession],
+    [sessionId, applySession, setProjectParam],
   )
 
   const handleCreateNew = React.useCallback(() => {
     applySession(freshSession())
-  }, [applySession])
+    // Clear the URL param; autosave + the state→URL effect will set it once the
+    // fresh session is persisted and appears in the saved list.
+    void setProjectParam(null)
+  }, [applySession, setProjectParam])
 
   const handleRename = React.useCallback((name: string) => {
     setSessionName(name)
@@ -236,6 +244,41 @@ export default function AnalyzePage() {
     },
     [sessionId, refreshSessions, applySession],
   )
+
+  // ── URL ⇄ state ───────────────────────────────────────────────────────────
+  // URL → state (ONCE on mount): if ?project points at a stored session that
+  // isn't the current one, load it asynchronously. applySession runs inside the
+  // .then callback (not the effect body), so it does not cascade.
+  const hydratedFromUrl = React.useRef(false)
+  React.useEffect(() => {
+    if (hydratedFromUrl.current) return
+    hydratedFromUrl.current = true
+    if (!projectParam || projectParam === sessionId) return
+    const target = projectParam
+    loadAnalyzeSession(target)
+      .then((s) => {
+        if (s) {
+          applySession(s)
+          logEvent(`解析セッションを読み込み: ${s.name}`)
+        } else {
+          // Unknown id — drop the stale param, keep the current new session.
+          void setProjectParam(null)
+        }
+      })
+      .catch(() => {
+        // Load failures are non-fatal; keep the current session.
+      })
+  }, [projectParam, sessionId, applySession, setProjectParam])
+
+  // state → URL: once the current session is persisted (present in the saved
+  // list), reflect its id in the URL. Equality guard keeps this loop-free.
+  // Updating the URL (an external system) from an effect is allowed.
+  React.useEffect(() => {
+    const persisted = sessions.some((s) => s.id === sessionId)
+    if (persisted && projectParam !== sessionId) {
+      void setProjectParam(sessionId)
+    }
+  }, [sessions, sessionId, projectParam, setProjectParam])
 
   // ── Trace mutations ───────────────────────────────────────────────────────
   const handleTraces = React.useCallback(
@@ -626,5 +669,16 @@ export default function AnalyzePage() {
         </div>
       </section>
     </ToolLayout>
+  )
+}
+
+// `AnalyzeTool` consumes the URL search params via nuqs' `useQueryState`, which
+// relies on `useSearchParams()`. Next.js requires that consumer to sit under a
+// <Suspense> boundary so the rest of the route can still be prerendered.
+export default function AnalyzePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <AnalyzeTool />
+    </React.Suspense>
   )
 }

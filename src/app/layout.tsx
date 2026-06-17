@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { AppShell } from '@/components/layout/AppShell'
 import './globals.css'
 import { Geist } from "next/font/google";
@@ -28,7 +29,9 @@ export default function RootLayout({
     <html lang="ja" className={cn("font-sans", geist.variable)}>
       <body>
         <TooltipProvider>
-          <AppShell>{children}</AppShell>
+          <NuqsAdapter>
+            <AppShell>{children}</AppShell>
+          </NuqsAdapter>
         </TooltipProvider>
         <Toaster />
       </body>
