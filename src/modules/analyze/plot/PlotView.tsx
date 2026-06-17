@@ -27,6 +27,13 @@ export interface PlotViewProps {
   height?: number
   /** Optional fit-curve drawn over the traces as a dashed line. */
   overlay?: PlotOverlay
+  /**
+   * Optional vertical marker lines (e.g. FP fitted peak wavelengths). Positions
+   * are in the CURRENT plot X coordinate space (same units as the trace X after
+   * any axis transform). Each is drawn full plot-height, clipped to the plot
+   * area, at strokeWidth 2.
+   */
+  verticalLines?: number[]
 }
 
 // Muted fit-curve overlay fallback (ink-2). The publication plot's data/axes
@@ -37,6 +44,8 @@ const OVERLAY_DEFAULT_COLOR = '#5b6470'
 const PAPER = '#ffffff'
 const INK = '#000000'
 const ACCENT = '#2f6df0' // legend drag affordance (chrome, stripped from export)
+// Vertical marker lines (FP peak positions): muted but visible blue.
+const MARKER = '#2f6df0'
 
 // The overall SVG box; the data area inside is forced SQUARE.
 const DEFAULT_WIDTH = 760
@@ -110,6 +119,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     width = DEFAULT_WIDTH,
     height = DEFAULT_HEIGHT,
     overlay,
+    verticalLines,
   },
   ref,
 ) {
@@ -439,12 +449,30 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
               d={buildPathXY(overlay.x, overlay.y)}
               fill="none"
               stroke={overlay.color ?? OVERLAY_DEFAULT_COLOR}
-              strokeWidth={1.5}
+              strokeWidth={2}
               strokeDasharray="6 4"
               strokeLinejoin="round"
               strokeLinecap="round"
             />
           )}
+          {/* Vertical marker lines (FP fitted peak wavelengths). */}
+          {verticalLines?.map((vx, i) => {
+            if (!Number.isFinite(vx) || (xLog && vx <= 0)) return null
+            const px = xScale(vx)
+            if (!Number.isFinite(px)) return null
+            return (
+              <line
+                key={`vline-${i}`}
+                x1={px}
+                y1={0}
+                x2={px}
+                y2={plotSide}
+                stroke={MARKER}
+                strokeWidth={2}
+                strokeOpacity={0.7}
+              />
+            )
+          })}
         </g>
 
         {/* Legend — draggable & resizable */}

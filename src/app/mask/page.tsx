@@ -17,6 +17,7 @@ import { CalibrationPanel } from '@/modules/mask/components/CalibrationPanel'
 import { GeneratorPanel } from '@/modules/mask/components/GeneratorPanel'
 import { Button } from '@/components/ui/button'
 import { SectionLabel } from '@/components/app/SectionLabel'
+import { ToolLayout } from '@/components/app/ToolLayout'
 import {
   ProjectSwitcher,
   ProjectSwitcherItem,
@@ -174,13 +175,9 @@ export default function MaskPage() {
 
   const isGenerator = tool === 'lineSpace' || tool === 'grid'
 
-  return (
-    <div
-      className="grid h-full min-h-0 w-full"
-      style={{ gridTemplateColumns: '300px minmax(0,1fr)' }}
-    >
-      <aside className="flex min-h-0 flex-col border-r border-border bg-card">
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-4">
+  const panel = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-4">
           {/* 1. Project switcher + autosave */}
           <ProjectSwitcher
             items={savedDocs}
@@ -235,21 +232,24 @@ export default function MaskPage() {
           </Accordion>
         </div>
 
-        {/* 5. Export */}
-        <div className="border-t border-border p-4">
-          <Button onClick={handleExport} className="w-full">
-            <Download />
-            BMP出力
-          </Button>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            図形 <span className="tnum">{doc.shapes.length}</span> 個 /{' '}
-            <span className="tnum">{Math.round(doc.widthUm)}</span>×
-            <span className="tnum">{Math.round(doc.heightUm)}</span> µm
-          </p>
-        </div>
-      </aside>
+      {/* 5. Export */}
+      <div className="border-t border-border p-4">
+        <Button onClick={handleExport} className="w-full">
+          <Download />
+          BMP出力
+        </Button>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+          図形 <span className="tnum">{doc.shapes.length}</span> 個 /{' '}
+          <span className="tnum">{Math.round(doc.widthUm)}</span>×
+          <span className="tnum">{Math.round(doc.heightUm)}</span> µm
+        </p>
+      </div>
+    </div>
+  )
 
-      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-muted/30 p-4">
+  return (
+    <ToolLayout panel={panel} panelTitle="マスク設定" panelWidth={300}>
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30 p-4">
         <MaskCanvas
           doc={doc}
           cal={cal}
@@ -262,6 +262,6 @@ export default function MaskPage() {
           onToolChange={setTool}
         />
       </section>
-    </div>
+    </ToolLayout>
   )
 }

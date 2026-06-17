@@ -44,6 +44,9 @@
 html,
 body {
   height: 100%;
+  overflow: hidden;
+  /* No rubber-band / bounce when content meets the edge. */
+  overscroll-behavior: none;
 }
 
 body {

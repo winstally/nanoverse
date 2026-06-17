@@ -1,11 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { Download, FileImage } from 'lucide-react'
+import { FileImage } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { exportSvg, exportPng } from '../plot/export'
+import { exportPng } from '../plot/export'
 
 export interface ExportButtonsProps {
   getSvg: () => SVGSVGElement | null
@@ -20,13 +20,6 @@ export function ExportButtons({
   disabled,
   className,
 }: ExportButtonsProps) {
-  const handleSvg = React.useCallback(() => {
-    const svg = getSvg()
-    if (!svg) return
-    exportSvg(svg, `${baseName}.svg`)
-    toast.success('SVG を書き出しました')
-  }, [getSvg, baseName])
-
   const handlePng = React.useCallback(async () => {
     const svg = getSvg()
     if (!svg) return
@@ -46,21 +39,10 @@ export function ExportButtons({
         onClick={() => void handlePng()}
         disabled={disabled}
         title="PNG出力"
-        className="flex-1"
+        className="w-full"
       >
         <FileImage />
         PNG
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleSvg}
-        disabled={disabled}
-        title="SVG出力"
-        className="flex-1"
-      >
-        <Download />
-        SVG
       </Button>
     </div>
   )

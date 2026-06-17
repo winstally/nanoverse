@@ -29,6 +29,13 @@ export interface PlotStyle {
   normalize?: boolean
   /** Baseline correction applied before normalize / fit / plot. */
   baselineMode?: BaselineMode
+
+  /** FP cavity length (µm). */
+  fpL?: number
+  /** FP peak-search minimum wavelength (nm). */
+  fpMinWl?: number
+  /** FP peak-search maximum wavelength (nm). */
+  fpMaxWl?: number
 }
 
 export const IGOR_PRESET: PlotStyle = {
@@ -48,4 +55,7 @@ export const DEFAULT_PLOT_STYLE: PlotStyle = {
   laserNm: 532,
   normalize: false,
   baselineMode: 'none',
+  fpL: 6,
+  fpMinWl: 1160,
+  fpMaxWl: 1580,
 }

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { AppShell } from '@/components/layout/AppShell'
 import './globals.css'
 import { Geist } from "next/font/google";
@@ -10,6 +10,13 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'nanoverse',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#0d0e10',
 }
 
 export default function RootLayout({

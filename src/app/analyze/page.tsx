@@ -7,6 +7,7 @@ import { TraceList } from '@/modules/analyze/components/TraceList'
 import { AxisControls } from '@/modules/analyze/components/AxisControls'
 import { ExportButtons } from '@/modules/analyze/components/ExportButtons'
 import { PeakPanel } from '@/modules/analyze/components/PeakPanel'
+import { FpPanel } from '@/modules/analyze/components/FpPanel'
 import { DisplaySettings } from '@/modules/analyze/components/DisplaySettings'
 import PlotView from '@/modules/analyze/plot/PlotView'
 import type { PlotOverlay } from '@/modules/analyze/plot/PlotView'
@@ -14,6 +15,10 @@ import { DEFAULT_PLOT_STYLE, type PlotStyle } from '@/modules/analyze/plot/prese
 import { transformX, normalize, baseline } from '@/modules/analyze/transform'
 import { fitPeaks, fitCurve } from '@/modules/analyze/fit'
 import type { PeakModel, FitResult } from '@/modules/analyze/fit'
+import { fitFp, DEFAULT_FP_OPTIONS } from '@/modules/analyze/fp'
+import type { FpFit, FpOptions } from '@/modules/analyze/fp'
+import { Label } from '@/components/ui/label'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type {
   AxisMode,
   BaselineMode,
@@ -24,6 +29,7 @@ import type {
 import { DEFAULT_LEGEND } from '@/modules/analyze/types'
 import { ProjectSwitcher } from '@/components/app/ProjectSwitcher'
 import { SectionLabel } from '@/components/app/SectionLabel'
+import { ToolLayout } from '@/components/app/ToolLayout'
 import { Separator } from '@/components/ui/separator'
 import {
   Accordion,
@@ -77,6 +83,28 @@ export default function AnalyzePage() {
   const [overlay, setOverlay] = React.useState(false)
   const [fitting, setFitting] = React.useState(false)
 
+  // ── FP (Fabry–Pérot) analysis ──────────────────────────────────────────────
+  const [analysisType, setAnalysisType] = React.useState<'peak' | 'fp'>('peak')
+  const [fpL, setFpL] = React.useState<number>(DEFAULT_FP_OPTIONS.L)
+  const [fpMinWl, setFpMinWl] = React.useState<number>(DEFAULT_FP_OPTIONS.minWl)
+  const [fpMaxWl, setFpMaxWl] = React.useState<number>(DEFAULT_FP_OPTIONS.maxWl)
+  const [fpAdvanced, setFpAdvanced] = React.useState<
+    Pick<FpOptions, 'prominence' | 'distanceNm' | 'smoothWindow' | 'refineNm'>
+  >({
+    prominence: DEFAULT_FP_OPTIONS.prominence,
+    distanceNm: DEFAULT_FP_OPTIONS.distanceNm,
+    smoothWindow: DEFAULT_FP_OPTIONS.smoothWindow,
+    refineNm: DEFAULT_FP_OPTIONS.refineNm,
+  })
+  const [fpFitting, setFpFitting] = React.useState(false)
+  // FP fit is keyed to the trace id it was computed on; cleared when the source
+  // trace changes (FP always uses RAW nm, so axis/normalize changes don't apply).
+  const [fpFit, setFpFit] = React.useState<{
+    traceId: string
+    fit: FpFit | null
+    message: string | null
+  } | null>(null)
+
   // Fit output is tagged with the coordinate-space signature it was computed
   // under. When the current signature drifts (axis/normalize/baseline change)
   // the cached results + message are treated as stale and dropped.
@@ -120,6 +148,9 @@ export default function AnalyzePage() {
       laserNm,
       normalize: doNormalize,
       baselineMode,
+      fpL,
+      fpMinWl,
+      fpMaxWl,
     }
     return { id: sessionId, name: sessionName, traces, type, style }
   }, [
@@ -132,6 +163,9 @@ export default function AnalyzePage() {
     laserNm,
     doNormalize,
     baselineMode,
+    fpL,
+    fpMinWl,
+    fpMaxWl,
   ])
 
   const persist = React.useCallback(
@@ -156,7 +190,11 @@ export default function AnalyzePage() {
     setDoNormalize(s.style?.normalize ?? false)
     setLegend(s.style?.legend ?? { ...DEFAULT_LEGEND })
     setBaselineMode(s.style?.baselineMode ?? 'none')
+    setFpL(s.style?.fpL ?? DEFAULT_FP_OPTIONS.L)
+    setFpMinWl(s.style?.fpMinWl ?? DEFAULT_FP_OPTIONS.minWl)
+    setFpMaxWl(s.style?.fpMaxWl ?? DEFAULT_FP_OPTIONS.maxWl)
     setFit(null)
+    setFpFit(null)
     setOverlay(false)
   }, [])
 
@@ -283,6 +321,29 @@ export default function AnalyzePage() {
   const firstVisible = plotTraces[0]
   const canFit = !!firstVisible && firstVisible.x.length >= 3
 
+  // FP operates on the FIRST visible trace's RAW wavelength (nm) — never the
+  // axis-transformed X. We keep the original (unmodified) trace here.
+  const firstVisibleRaw = React.useMemo<Trace | undefined>(
+    () => traces.find((t) => t.visible && t.x.length > 0),
+    [traces],
+  )
+  const canFitFp = !!firstVisibleRaw && firstVisibleRaw.x.length >= 5
+
+  // FP fit applies only while its source trace is still the first visible one.
+  const fpFitCurrent =
+    fpFit && firstVisibleRaw && fpFit.traceId === firstVisibleRaw.id
+      ? fpFit
+      : null
+  const fpResultFit = fpFitCurrent?.fit ?? null
+  const fpMessage = fpFitCurrent?.message ?? null
+
+  // Fitted FP peak wavelengths (raw nm) transformed into the CURRENT plot X
+  // space (same transform as the trace data), so the vertical markers line up.
+  const fpVerticalLines = React.useMemo<number[] | undefined>(() => {
+    if (analysisType !== 'fp' || !fpResultFit) return undefined
+    return transformX(fpResultFit.peaksNm, type, transformOpts).x
+  }, [analysisType, fpResultFit, type, transformOpts])
+
   const yLabel = doNormalize ? 'Norm. Intensity' : 'Intensity'
   const xAxisLabel = `${axisInfo.xLabel} (${axisInfo.xUnit})`
 
@@ -324,6 +385,42 @@ export default function AnalyzePage() {
     })
   }, [firstVisible, model, fitSignature])
 
+  // ── FP fit ──────────────────────────────────────────────────────────────
+  const handleFpFit = React.useCallback(() => {
+    if (!firstVisibleRaw || firstVisibleRaw.x.length < 5) {
+      setFpFit({
+        traceId: firstVisibleRaw?.id ?? '',
+        fit: null,
+        message: 'フィット対象がありません',
+      })
+      return
+    }
+    const traceId = firstVisibleRaw.id
+    setFpFitting(true)
+    requestAnimationFrame(() => {
+      try {
+        const opts: FpOptions = {
+          ...DEFAULT_FP_OPTIONS,
+          ...fpAdvanced,
+          L: fpL,
+          minWl: fpMinWl,
+          maxWl: fpMaxWl,
+        }
+        const res = fitFp(firstVisibleRaw.x, firstVisibleRaw.y, opts)
+        if (res.ok) {
+          setFpFit({ traceId, fit: res.fit, message: null })
+          logEvent(`FPフィット: n_eff=${res.fit.nEff.toFixed(3)}`)
+        } else {
+          setFpFit({ traceId, fit: null, message: res.error })
+        }
+      } catch {
+        setFpFit({ traceId, fit: null, message: 'フィットに失敗しました' })
+      } finally {
+        setFpFitting(false)
+      }
+    })
+  }, [firstVisibleRaw, fpAdvanced, fpL, fpMinWl, fpMaxWl])
+
   const getSvg = React.useCallback(() => svgRef.current, [])
 
   const switcherItems = React.useMemo(
@@ -331,13 +428,8 @@ export default function AnalyzePage() {
     [sessions],
   )
 
-  return (
-    <div
-      className="grid h-full min-h-0 w-full"
-      style={{ gridTemplateColumns: '320px minmax(0,1fr)' }}
-    >
-      {/* LEFT: single workflow-ordered panel */}
-      <aside className="flex min-h-0 flex-col gap-4 overflow-auto border-r border-border bg-card p-4">
+  const panel = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
         {/* 1 — Project */}
         <ProjectSwitcher
           items={switcherItems}
@@ -395,18 +487,60 @@ export default function AnalyzePage() {
         {/* 4 — Peak analysis */}
         <section className="flex flex-col gap-2">
           <SectionLabel>ピーク解析</SectionLabel>
-          <PeakPanel
-            model={model}
-            onModel={setModel}
-            overlay={overlay}
-            onOverlay={setOverlay}
-            results={results}
-            canFit={canFit}
-            fitting={fitting}
-            fitMessage={fitMessage}
-            onFit={handleFit}
-            xUnit={axisInfo.xUnit}
-          />
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-muted-foreground">解析タイプ</Label>
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              spacing={0}
+              value={[analysisType]}
+              onValueChange={(v) => {
+                const next = v[0] as 'peak' | 'fp' | undefined
+                if (next) setAnalysisType(next)
+              }}
+              aria-label="解析タイプ"
+              className="w-full"
+            >
+              <ToggleGroupItem value="peak" className="flex-1">
+                ピーク
+              </ToggleGroupItem>
+              <ToggleGroupItem value="fp" className="flex-1">
+                FP共振
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          {analysisType === 'peak' ? (
+            <PeakPanel
+              model={model}
+              onModel={setModel}
+              overlay={overlay}
+              onOverlay={setOverlay}
+              results={results}
+              canFit={canFit}
+              fitting={fitting}
+              fitMessage={fitMessage}
+              onFit={handleFit}
+              xUnit={axisInfo.xUnit}
+            />
+          ) : (
+            <FpPanel
+              L={fpL}
+              onL={setFpL}
+              minWl={fpMinWl}
+              onMinWl={setFpMinWl}
+              maxWl={fpMaxWl}
+              onMaxWl={setFpMaxWl}
+              advanced={fpAdvanced}
+              onAdvanced={setFpAdvanced}
+              fit={fpResultFit}
+              canFit={canFitFp}
+              fitting={fpFitting}
+              fitMessage={fpMessage}
+              onFit={handleFpFit}
+            />
+          )}
         </section>
 
         {/* 5 — Display settings (collapsed) */}
@@ -439,10 +573,13 @@ export default function AnalyzePage() {
             className="w-full"
           />
         </div>
-      </aside>
+    </div>
+  )
 
+  return (
+    <ToolLayout panel={panel} panelTitle="解析設定" panelWidth={320}>
       {/* CENTER: the publication plot only */}
-      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background p-4">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background p-4">
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md border border-border bg-card p-3">
           {plotTraces.length === 0 ? (
             <span className="text-xs text-muted-foreground">
@@ -452,7 +589,8 @@ export default function AnalyzePage() {
             <PlotView
               ref={svgRef}
               traces={plotTraces}
-              overlay={fitOverlay}
+              overlay={analysisType === 'peak' ? fitOverlay : undefined}
+              verticalLines={fpVerticalLines}
               xLabel={xAxisLabel}
               yLabel={yLabel}
               style={DEFAULT_PLOT_STYLE}
@@ -462,6 +600,6 @@ export default function AnalyzePage() {
           )}
         </div>
       </section>
-    </div>
+    </ToolLayout>
   )
 }

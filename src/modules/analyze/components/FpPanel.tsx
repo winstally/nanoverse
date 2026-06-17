@@ -1,0 +1,283 @@
+'use client'
+
+import * as React from 'react'
+import { Sparkles, FileDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { NumberField } from '@/components/app/NumberField'
+import type { FpFit, FpOptions } from '../fp'
+
+export interface FpPanelProps {
+  /** Cavity length (µm). */
+  L: number
+  onL: (v: number) => void
+  /** Peak-search window (nm). */
+  minWl: number
+  onMinWl: (v: number) => void
+  maxWl: number
+  onMaxWl: (v: number) => void
+  /** Advanced detection params. */
+  advanced: Pick<
+    FpOptions,
+    'prominence' | 'distanceNm' | 'smoothWindow' | 'refineNm'
+  >
+  onAdvanced: (
+    next: Pick<
+      FpOptions,
+      'prominence' | 'distanceNm' | 'smoothWindow' | 'refineNm'
+    >,
+  ) => void
+  fit: FpFit | null
+  canFit: boolean
+  fitting: boolean
+  fitMessage: string | null
+  onFit: () => void
+  className?: string
+}
+
+function fmt(v: number, digits = 4): string {
+  if (!Number.isFinite(v)) return '—'
+  const abs = Math.abs(v)
+  if (abs !== 0 && (abs >= 1e5 || abs < 1e-3)) return v.toExponential(2)
+  return v.toFixed(digits)
+}
+
+function toCsv(fit: FpFit): string {
+  const header = ['m', 'lambda_obs_nm', 'lambda_calc_nm', 'residual_nm'].join(
+    ',',
+  )
+  const rows = fit.m.map((mi, i) =>
+    [
+      mi,
+      fit.peaksNm[i].toFixed(6),
+      fit.calcNm[i].toFixed(6),
+      fit.residualNm[i].toFixed(6),
+    ].join(','),
+  )
+  return [header, ...rows].join('\r\n')
+}
+
+/**
+ * Summary metric shown in the FP result block. Value uses tabular figures.
+ */
+function Metric({
+  label,
+  value,
+  unit,
+}: {
+  label: string
+  value: string
+  unit?: string
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tnum text-foreground">
+        {value}
+        {unit && (
+          <span className="ml-0.5 text-muted-foreground">{unit}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+export function FpPanel({
+  L,
+  onL,
+  minWl,
+  onMinWl,
+  maxWl,
+  onMaxWl,
+  advanced,
+  onAdvanced,
+  fit,
+  canFit,
+  fitting,
+  fitMessage,
+  onFit,
+  className,
+}: FpPanelProps) {
+  const handleCsv = React.useCallback(() => {
+    if (!fit) return
+    const csv = toCsv(fit)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'fp_fit.csv'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast.success('CSV を書き出しました')
+  }, [fit])
+
+  return (
+    <div className={cn('flex flex-col gap-3', className)}>
+      <NumberField
+        label="キャビティ長"
+        unit="µm"
+        value={L}
+        min={0.1}
+        step={0.1}
+        onChange={(v) => {
+          if (Number.isFinite(v) && v > 0) onL(v)
+        }}
+      />
+
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-muted-foreground">探索範囲</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="min"
+            unit="nm"
+            value={minWl}
+            step={1}
+            onChange={(v) => {
+              if (Number.isFinite(v)) onMinWl(v)
+            }}
+          />
+          <NumberField
+            label="max"
+            unit="nm"
+            value={maxWl}
+            step={1}
+            onChange={(v) => {
+              if (Number.isFinite(v)) onMaxWl(v)
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Advanced detection params (collapsed by default). */}
+      <Accordion>
+        <AccordionItem value="fp-advanced" className="border-t border-border">
+          <AccordionTrigger>
+            <span className="eyebrow">詳細パラメータ</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="flex flex-col gap-3 pt-1">
+              <NumberField
+                label="prominence"
+                value={advanced.prominence}
+                min={0}
+                step={10}
+                onChange={(v) => {
+                  if (Number.isFinite(v) && v >= 0)
+                    onAdvanced({ ...advanced, prominence: v })
+                }}
+              />
+              <NumberField
+                label="distance"
+                unit="nm"
+                value={advanced.distanceNm}
+                min={0}
+                step={1}
+                onChange={(v) => {
+                  if (Number.isFinite(v) && v >= 0)
+                    onAdvanced({ ...advanced, distanceNm: v })
+                }}
+              />
+              <NumberField
+                label="smooth window"
+                value={advanced.smoothWindow}
+                min={3}
+                step={2}
+                onChange={(v) => {
+                  if (Number.isFinite(v) && v >= 3)
+                    onAdvanced({ ...advanced, smoothWindow: v })
+                }}
+              />
+              <NumberField
+                label="refine"
+                unit="nm"
+                value={advanced.refineNm}
+                min={0}
+                step={0.5}
+                onChange={(v) => {
+                  if (Number.isFinite(v) && v >= 0)
+                    onAdvanced({ ...advanced, refineNm: v })
+                }}
+              />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      <Button className="w-full" onClick={onFit} disabled={!canFit || fitting}>
+        <Sparkles />
+        {fitting ? 'フィット中…' : 'FPフィット'}
+      </Button>
+
+      {!canFit && (
+        <p className="text-xs text-muted-foreground">
+          表示中のトレースが必要です
+        </p>
+      )}
+      {fitMessage && <p className="text-xs text-destructive">{fitMessage}</p>}
+
+      {fit && (
+        <div className="flex flex-col gap-2">
+          {/* Summary block */}
+          <div className="tnum flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-2.5 text-xs">
+            <Metric label="n_eff" value={fmt(fit.nEff)} />
+            <Metric label="δ" value={fmt(fit.delta)} />
+            <Metric label="A" value={fmt(fit.A, 3)} unit=" nm" />
+            <Metric label="RMSE" value={fmt(fit.rmseNm, 3)} unit=" nm" />
+            <Metric label="ピーク数" value={String(fit.peaksNm.length)} />
+            <Metric label="m_start" value={String(fit.mStart)} />
+          </div>
+
+          {/* Per-mode table */}
+          <div className="overflow-hidden rounded-md border border-border">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-muted text-right text-muted-foreground">
+                  <th className="px-2 py-1.5 text-left font-medium">m</th>
+                  <th className="px-2 py-1.5 font-medium">λ_obs</th>
+                  <th className="px-2 py-1.5 font-medium">λ_calc</th>
+                  <th className="px-2 py-1.5 font-medium">残差</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fit.m.map((mi, i) => (
+                  <tr
+                    key={i}
+                    className={cn(
+                      'tnum border-t border-border text-right text-foreground',
+                      i % 2 === 1 && 'bg-muted/50',
+                    )}
+                  >
+                    <td className="px-2 py-1 text-left">{mi}</td>
+                    <td className="px-2 py-1">{fmt(fit.peaksNm[i], 2)}</td>
+                    <td className="px-2 py-1">{fmt(fit.calcNm[i], 2)}</td>
+                    <td className="px-2 py-1">{fmt(fit.residualNm[i], 3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleCsv}
+          >
+            <FileDown />
+            CSV出力
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
