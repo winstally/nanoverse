@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# nanoverse
 
-## Getting Started
+研究室の定常作業をブラウザだけで完結させるツール集。バックエンド不要・データはブラウザ内（IndexedDB）に保存。
 
-First, run the development server:
+## ツール
 
+### マスク設計（マスクレス露光）
+- µm 寸法を直接指定して図形を配置 → **DMD 解像度の 1bit BMP を書き出し**
+- 換算「20倍 1cm = 14µm」を内部で保持（スライド全体 = DMD 全面）
+- 図形：矩形・楕円・線・文字・ストライプ（等間隔の平行線）・グリッド（格子）
+- PowerPoint + 別変換ツールを置き換え、設計データは保存して再編集可能
+
+### スペクトル解析（Igor の簡易代替）
+- 測定 txt をドロップ → 即グラフ。出版用スタイルは既定適用（mirror 枠・内向き tick・Times New Roman）
+- PL（nm⇄eV）/ Raman（ラマンシフト cm⁻¹）/ XRD（2θ）
+- トレース毎の色・線幅、凡例位置、ベースライン補正、正規化
+- ピークフィット（Gaussian / Lorentzian）→ 中心・FWHM・面積、PNG/SVG/CSV 出力
+
+## 技術スタック
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui (Base UI) · IndexedDB
+
+## 開発
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev        # http://localhost:3000
+pnpm build && pnpm start
 ```
+各自がローカルでサーバーを立て、ブラウザから利用します。
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## ライセンス
+MIT
