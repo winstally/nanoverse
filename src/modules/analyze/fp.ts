@@ -93,6 +93,23 @@ function median(values: number[]): number {
   return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
 }
 
+/** Centered moving average (window forced odd-ish; clamped at the edges). */
+function movingAverage(y: number[], window: number): number[] {
+  const n = y.length
+  if (n === 0 || window <= 1) return y.slice()
+  const half = Math.floor(window / 2)
+  const pre = new Array<number>(n + 1)
+  pre[0] = 0
+  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + y[i]
+  const out = new Array<number>(n)
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - half)
+    const b = Math.min(n - 1, i + half)
+    out[i] = (pre[b + 1] - pre[a]) / (b - a + 1)
+  }
+  return out
+}
+
 /**
  * Savitzky–Golay smoothing filter (centered, returns the smoothed value at each
  * point). Window must be odd and >= 3; polyorder = min(3, window - 1).
@@ -360,37 +377,60 @@ function detectMainPeaks(
     Math.round(dx > 0 ? opts.distanceNm / dx : 1),
   )
 
-  // Smoothed-signal range (used to derive adaptive prominence thresholds, so the
-  // detector works regardless of the data's absolute intensity scale).
-  let smin = Infinity
-  let smax = -Infinity
-  for (const v of ySmooth) {
-    if (v < smin) smin = v
-    if (v > smax) smax = v
-  }
-  const range = smax - smin
+  // FP fringes ride on the slowly varying PL envelope, so an ABSOLUTE prominence
+  // only catches fringes where the envelope is tall (and misses the weaker ones
+  // at low intensity). Detrend first — subtract a wide moving-average envelope so
+  // every fringe oscillates around zero with a comparable amplitude — then detect
+  // with a threshold relative to the residual noise. This catches the whole comb
+  // regardless of the envelope shape.
+  const envWin = oddWindow(
+    Math.max(win, distanceSamples * 4 + 1, 11),
+    xs.length,
+  )
+  const envelope = movingAverage(ySmooth, envWin)
+  const yd = ySmooth.map((v, i) => v - envelope[i])
 
-  // Adaptive search: try the requested prominence first, then progressively
-  // lower thresholds (fractions of the signal range), and if still short, relax
-  // the minimum spacing. Pick the HIGHEST prominence that yields >=3 peaks
-  // (cleanest set). This avoids the user having to hand-tune prominence/distance.
-  const promLadder: number[] = [opts.prominence]
-  for (const f of [0.25, 0.15, 0.1, 0.06, 0.03, 0.015, 0.008]) {
-    const p = range * f
-    if (p > 0 && p < opts.prominence) promLadder.push(p)
+  // Noise floor estimated from the SMOOTHING RESIDUAL (raw − smoothed): the SG
+  // filter removes high-frequency noise, so what's left is the noise itself —
+  // crucially this is independent of the fringe amplitude (a MAD of the detrended
+  // signal would just measure the fringes, not the noise).
+  const resid = ys.map((v, i) => v - ySmooth[i])
+  const rMed = median(resid)
+  const noise = 1.4826 * median(resid.map((v) => Math.abs(v - rMed)))
+  let ydMin = Infinity
+  let ydMax = -Infinity
+  for (const v of yd) {
+    if (v < ydMin) ydMin = v
+    if (v > ydMax) ydMax = v
+  }
+  const ydRange = ydMax - ydMin
+
+  // Base threshold: if the user kept the factory prominence we pick an adaptive
+  // value a few × the noise floor (fringe prominence ≈ 2× its amplitude, so this
+  // separates fringes from noise across the whole envelope). A custom prominence
+  // is honoured as-is. The ladder + spacing relaxation only matter if too few.
+  const userCustom = opts.prominence !== DEFAULT_FP_OPTIONS.prominence
+  const baseProm = userCustom
+    ? opts.prominence
+    : Math.max(4 * noise, ydRange * 0.01, 1e-6)
+  const floor = Math.max(2.5 * noise, 1e-9)
+
+  const promLadder: number[] = [baseProm]
+  for (const f of [0.8, 0.65, 0.5]) {
+    const p = baseProm * f
+    if (p >= floor) promLadder.push(p)
   }
   const distLadder = [
     distanceSamples,
     Math.max(1, Math.floor(distanceSamples / 2)),
-    1,
   ]
 
   let peakIdx: number[] = []
-  let usedProm = opts.prominence
+  let usedProm = baseProm
   let usedDist = distanceSamples
   outer: for (const dist of distLadder) {
     for (const prom of promLadder) {
-      const found = findPeaks(ySmooth, prom, dist)
+      const found = findPeaks(yd, prom, dist)
       if (found.length >= 3) {
         peakIdx = found
         usedProm = prom
