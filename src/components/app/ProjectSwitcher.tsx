@@ -1,18 +1,17 @@
 'use client'
 
+import * as React from 'react'
+import { FolderOpen, Plus, Trash2, Check } from 'lucide-react'
 import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxSeparator,
-} from '@/components/ui/combobox'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { AutosaveStatus } from '@/hooks/use-autosave'
-import { Plus, Trash2 } from 'lucide-react'
 
 export interface ProjectSwitcherItem {
   id: string
@@ -39,10 +38,8 @@ const STATUS_LABEL: Record<AutosaveStatus, string> = {
 }
 
 /**
- * Top-of-tool project switcher. The input shows/edits the current project name
- * (typing renames it). The dropdown lists saved projects to load, offers a
- * "新規作成" action, and a delete affordance per item. A subtle autosave status
- * sits beside it.
+ * Top-of-tool project control. A plain text input renames the current project
+ * (autosaved); a popover lists saved projects to load, with new / delete.
  */
 export function ProjectSwitcher({
   items,
@@ -55,79 +52,100 @@ export function ProjectSwitcher({
   status = 'idle',
   className,
 }: ProjectSwitcherProps) {
+  const [open, setOpen] = React.useState(false)
   const statusText = STATUS_LABEL[status]
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
-      <Combobox
-        items={items}
-        // Static list: do not filter by the typed name (the input is for renaming).
-        filter={null}
-        // We don't bind a selected value; selection is handled via onValueChange.
-        value={null}
-        onValueChange={(next) => {
-          if (next && next.id !== currentId) {
-            onSelect(next.id)
-          }
-        }}
-        // The input value is the current project name; editing it renames.
-        inputValue={currentName}
-        onInputValueChange={(text) => onRename(text)}
-        itemToStringLabel={(item: ProjectSwitcherItem) => item?.name ?? ''}
-      >
-        <ComboboxInput
-          className="w-56"
-          placeholder="プロジェクト名"
-          aria-label="プロジェクト名"
-        >
-          <ComboboxContent>
-            <ComboboxEmpty>保存済みプロジェクトはありません</ComboboxEmpty>
-            <ComboboxList>
-              {(item: ProjectSwitcherItem) => (
-                <ComboboxItem
-                  key={item.id}
-                  value={item}
-                  className={cn(
-                    'pr-2',
-                    item.id === currentId && 'font-medium'
-                  )}
-                >
-                  <span className="flex-1 truncate">{item.name}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`${item.name} を削除`}
-                    className="ml-1 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      e.preventDefault()
-                      onDelete(item.id)
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-            <ComboboxSeparator />
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm text-muted-foreground outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
-              onClick={() => onCreateNew()}
+    <div className={cn('flex items-center gap-1.5', className)}>
+      <Input
+        value={currentName}
+        onChange={(e) => onRename(e.target.value)}
+        placeholder="プロジェクト名"
+        aria-label="プロジェクト名"
+        className="min-w-0 flex-1"
+      />
+
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="プロジェクトを開く"
+              className="shrink-0"
             >
-              <Plus className="size-4" />
-              <span>新規作成</span>
-            </button>
-          </ComboboxContent>
-        </ComboboxInput>
-      </Combobox>
+              <FolderOpen />
+            </Button>
+          }
+        />
+        <PopoverContent align="end" className="w-64 p-1">
+          <div className="max-h-64 overflow-y-auto">
+            {items.length === 0 ? (
+              <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+                保存済みプロジェクトはありません
+              </p>
+            ) : (
+              items.map((item) => {
+                const active = item.id === currentId
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      'group flex items-center gap-1 rounded-md pr-1 hover:bg-muted',
+                      active && 'bg-muted/60',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm outline-hidden"
+                      onClick={() => {
+                        onSelect(item.id)
+                        setOpen(false)
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          'size-3.5 shrink-0',
+                          active ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`${item.name} を削除`}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => onDelete(item.id)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          <Separator className="my-1" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-hidden select-none hover:bg-muted hover:text-foreground"
+            onClick={() => {
+              onCreateNew()
+              setOpen(false)
+            }}
+          >
+            <Plus className="size-4" />
+            新規作成
+          </button>
+        </PopoverContent>
+      </Popover>
 
       {statusText && (
         <span
           className={cn(
-            'text-xs whitespace-nowrap',
-            status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            'shrink-0 text-xs whitespace-nowrap',
+            status === 'error' ? 'text-destructive' : 'text-muted-foreground',
           )}
           aria-live="polite"
         >
