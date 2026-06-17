@@ -156,6 +156,76 @@ export async function exportAllData(): Promise<Blob> {
   })
 }
 
+export interface ImportResult {
+  maskDocs: number
+  analyzeSessions: number
+  skipped: number
+}
+
+/**
+ * Read a previously exported JSON blob/file and merge its records into the
+ * object stores. Records are validated with the same lenient schemas used on the
+ * read path; genuinely corrupt records are skipped (counted in `skipped`).
+ * Existing records with the same id are overwritten (put semantics).
+ */
+export async function importAllData(file: Blob | string): Promise<ImportResult> {
+  const text = typeof file === 'string' ? file : await file.text()
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    throw new Error('JSON として解釈できませんでした')
+  }
+
+  if (payload === null || typeof payload !== 'object') {
+    throw new Error('対応していないファイル形式です')
+  }
+
+  const record = payload as {
+    maskDocs?: unknown
+    analyzeSessions?: unknown
+  }
+  const rawMasks = Array.isArray(record.maskDocs) ? record.maskDocs : []
+  const rawSessions = Array.isArray(record.analyzeSessions)
+    ? record.analyzeSessions
+    : []
+
+  if (rawMasks.length === 0 && rawSessions.length === 0) {
+    throw new Error('読み込めるデータが含まれていません')
+  }
+
+  let skipped = 0
+  const masks: StoredMaskDocument[] = []
+  for (const raw of rawMasks) {
+    const parsed = parseMaskDoc(raw)
+    if (parsed) masks.push(parsed)
+    else skipped++
+  }
+  const sessions: AnalyzeSession[] = []
+  for (const raw of rawSessions) {
+    const parsed = parseAnalyzeSession(raw)
+    if (parsed) sessions.push(parsed)
+    else skipped++
+  }
+
+  const db = await getDb()
+  const tx = db.transaction(['maskDocs', 'analyzeSessions'], 'readwrite')
+  const maskStore = tx.objectStore('maskDocs')
+  const analyzeStore = tx.objectStore('analyzeSessions')
+  await Promise.all([
+    ...masks.map((m) => maskStore.put(m)),
+    ...sessions.map((s) => analyzeStore.put(s)),
+    tx.done,
+  ])
+
+  return {
+    maskDocs: masks.length,
+    analyzeSessions: sessions.length,
+    skipped,
+  }
+}
+
 /** Clear both object stores. */
 export async function clearAllData(): Promise<void> {
   const db = await getDb()

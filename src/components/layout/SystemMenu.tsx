@@ -28,6 +28,7 @@ import {
 } from '@/lib/app-meta'
 import {
   exportAllData,
+  importAllData,
   clearAllData,
   storageEstimate,
 } from '@/lib/storage'

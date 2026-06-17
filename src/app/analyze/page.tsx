@@ -285,14 +285,18 @@ function AnalyzeTool() {
     (incoming: Trace[]) => {
       setTraces((prev) => {
         const seen = new Set(prev.map((t) => t.id))
-        const merged = incoming.map((t) => {
+        const added = incoming.map((t) => {
           let id = t.id
           let n = 1
           while (seen.has(id)) id = `${t.id}-${n++}`
           seen.add(id)
           return { ...t, id }
         })
-        return [...prev, ...merged]
+        const all = [...prev, ...added]
+        // Single-active: exactly one trace is shown (and is the fit target).
+        // Keep the previously-active one, otherwise activate the first.
+        const activeId = prev.find((t) => t.visible)?.id ?? all[0]?.id
+        return all.map((t) => ({ ...t, visible: t.id === activeId }))
       })
 
       // Don't silently cut data: while the FP search range is still the factory
@@ -324,14 +328,20 @@ function AnalyzeTool() {
     setTraces((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)))
   }, [])
 
+  // Single-active selection: clicking a trace activates it and deactivates the
+  // rest, so exactly one graph is shown and is the unambiguous fit target.
   const handleToggle = React.useCallback((id: string) => {
-    setTraces((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)),
-    )
+    setTraces((prev) => prev.map((t) => ({ ...t, visible: t.id === id })))
   }, [])
 
   const handleRemove = React.useCallback((id: string) => {
-    setTraces((prev) => prev.filter((t) => t.id !== id))
+    setTraces((prev) => {
+      const next = prev.filter((t) => t.id !== id)
+      if (next.length > 0 && !next.some((t) => t.visible)) {
+        return next.map((t, i) => ({ ...t, visible: i === 0 }))
+      }
+      return next
+    })
   }, [])
 
   const handleColor = React.useCallback((id: string, color: string) => {

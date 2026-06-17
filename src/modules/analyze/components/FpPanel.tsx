@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Sparkles, FileDown } from 'lucide-react'
+import { SquareActivity, FileDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -214,7 +214,7 @@ export function FpPanel({
       </Accordion>
 
       <Button className="w-full" onClick={onFit} disabled={!canFit || fitting}>
-        <Sparkles />
+        <SquareActivity />
         {fitting ? 'フィット中…' : 'FPフィット'}
       </Button>
 
