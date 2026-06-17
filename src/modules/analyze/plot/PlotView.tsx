@@ -293,7 +293,13 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
       width={svgW}
       height={svgH}
       viewBox={`0 0 ${svgW} ${svgH}`}
-      style={{ fontFamily: style.fontFamily, maxWidth: '100%', maxHeight: '100%' }}
+      style={{
+        fontFamily: style.fontFamily,
+        maxWidth: '100%',
+        maxHeight: '100%',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
     >
       {/* Outer canvas background */}
       <rect x={0} y={0} width={svgW} height={svgH} fill={PAPER} />
@@ -448,7 +454,11 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
             onPointerDown={beginDrag('move')}
             onPointerMove={onDragMove}
             onPointerUp={endDrag}
-            style={interactive ? { cursor: 'move' } : undefined}
+            style={
+              interactive
+                ? { cursor: 'move', touchAction: 'none' }
+                : undefined
+            }
           >
             <rect
               x={0}
@@ -497,7 +507,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
                 onPointerDown={beginDrag('resize')}
                 onPointerMove={onDragMove}
                 onPointerUp={endDrag}
-                style={{ cursor: 'nwse-resize' }}
+                style={{ cursor: 'nwse-resize', touchAction: 'none' }}
               />
             )}
           </g>
