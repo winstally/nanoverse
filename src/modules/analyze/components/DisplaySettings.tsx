@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -10,23 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { BaselineMode, LegendPosition } from '../types'
+import type { BaselineMode } from '../types'
 
 export interface DisplaySettingsProps {
-  legendPosition: LegendPosition
-  onLegendPosition: (p: LegendPosition) => void
+  legendVisible: boolean
+  onLegendVisible: (v: boolean) => void
+  onLegendReset: () => void
   baselineMode: BaselineMode
   onBaselineMode: (m: BaselineMode) => void
   className?: string
 }
-
-const LEGEND_OPTIONS: { value: LegendPosition; label: string }[] = [
-  { value: 'top-right', label: '右上' },
-  { value: 'top-left', label: '左上' },
-  { value: 'bottom-right', label: '右下' },
-  { value: 'bottom-left', label: '左下' },
-  { value: 'none', label: 'なし' },
-]
 
 const BASELINE_OPTIONS: { value: BaselineMode; label: string }[] = [
   { value: 'none', label: 'なし' },
@@ -36,8 +31,9 @@ const BASELINE_OPTIONS: { value: BaselineMode; label: string }[] = [
 
 /** Infrequently-changed plot display settings — lives inside an accordion. */
 export function DisplaySettings({
-  legendPosition,
-  onLegendPosition,
+  legendVisible,
+  onLegendVisible,
+  onLegendReset,
   baselineMode,
   onBaselineMode,
   className,
@@ -45,24 +41,27 @@ export function DisplaySettings({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">凡例の位置</Label>
-        <Select
-          value={legendPosition}
-          onValueChange={(v) => {
-            if (v) onLegendPosition(v as LegendPosition)
-          }}
-        >
-          <SelectTrigger className="w-full" aria-label="凡例の位置">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {LEGEND_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center justify-between">
+          <Label className="text-muted-foreground">凡例</Label>
+          <Switch
+            checked={legendVisible}
+            onCheckedChange={onLegendVisible}
+            aria-label="凡例を表示"
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            プロット上でドラッグして移動・サイズ変更
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onLegendReset}
+            disabled={!legendVisible}
+          >
+            位置をリセット
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">

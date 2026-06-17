@@ -1,5 +1,7 @@
 function serializeSvg(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
+  // Strip UI-only chrome (e.g. the legend resize handle) from exports.
+  clone.querySelectorAll('[data-noexport]').forEach((n) => n.remove())
   if (!clone.getAttribute('xmlns')) {
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   }

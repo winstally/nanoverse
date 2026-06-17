@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import { scaleLinear, scaleLog } from 'd3-scale'
-import type { LegendPosition, Trace } from '../types'
-import { DEFAULT_LINE_WIDTH } from '../types'
+import type { LegendLayout, Trace } from '../types'
+import { DEFAULT_LEGEND, DEFAULT_LINE_WIDTH } from '../types'
 import type { PlotStyle } from './preset'
 
 export interface PlotOverlay {
@@ -19,8 +19,10 @@ export interface PlotViewProps {
   style: PlotStyle
   xLog?: boolean
   yLog?: boolean
-  /** Where the legend sits, or 'none' to hide it. Defaults to 'top-right'. */
-  legendPosition?: LegendPosition
+  /** Free-placed legend. */
+  legend?: LegendLayout
+  /** Called while the user drags / resizes the legend. */
+  onLegendChange?: (legend: LegendLayout) => void
   width?: number
   height?: number
   /** Optional fit-curve drawn over the traces as a dashed line. */
@@ -34,9 +36,15 @@ const OVERLAY_DEFAULT_COLOR = '#5b6470'
 // Scientific-artifact colors: the publication plot is black ink on white paper.
 const PAPER = '#ffffff'
 const INK = '#000000'
+const ACCENT = '#2f6df0' // legend drag affordance (chrome, stripped from export)
 
-const DEFAULT_WIDTH = 900
-const DEFAULT_HEIGHT = 640
+// The overall SVG box; the data area inside is forced SQUARE.
+const DEFAULT_WIDTH = 760
+const DEFAULT_HEIGHT = 760
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v
+}
 
 // How much room (in px) the ticks + labels need around the plotting area.
 function computeMargins(style: PlotStyle) {
@@ -97,18 +105,38 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     style,
     xLog = false,
     yLog = false,
-    legendPosition = 'top-right',
+    legend = DEFAULT_LEGEND,
+    onLegendChange,
     width = DEFAULT_WIDTH,
     height = DEFAULT_HEIGHT,
     overlay,
   },
   ref,
 ) {
+  const innerRef = React.useRef<SVGSVGElement | null>(null)
+  const setSvg = React.useCallback(
+    (el: SVGSVGElement | null) => {
+      innerRef.current = el
+      if (typeof ref === 'function') ref(el)
+      else if (ref) (ref as React.MutableRefObject<SVGSVGElement | null>).current = el
+    },
+    [ref],
+  )
+
   const visible = traces.filter((t) => t.visible && t.x.length > 0)
   const hasOverlay = !!overlay && overlay.x.length > 0 && overlay.y.length > 0
   const margins = computeMargins(style)
-  const plotW = Math.max(10, width - margins.left - margins.right)
-  const plotH = Math.max(10, height - margins.top - margins.bottom)
+
+  // Square data area: the largest square that fits the requested box.
+  const plotSide = Math.max(
+    10,
+    Math.min(
+      width - margins.left - margins.right,
+      height - margins.top - margins.bottom,
+    ),
+  )
+  const svgW = plotSide + margins.left + margins.right
+  const svgH = plotSide + margins.top + margins.bottom
 
   // Gather all data extents from the visible traces.
   const allX: number[] = []
@@ -126,11 +154,11 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
   const [yMin, yMax] = yLog ? positiveExtent(allY) : niceExtent(allY)
 
   const xScale = xLog
-    ? scaleLog().domain([xMin, xMax]).range([0, plotW])
-    : scaleLinear().domain([xMin, xMax]).nice().range([0, plotW])
+    ? scaleLog().domain([xMin, xMax]).range([0, plotSide])
+    : scaleLinear().domain([xMin, xMax]).nice().range([0, plotSide])
   const yScale = yLog
-    ? scaleLog().domain([yMin, yMax]).range([plotH, 0])
-    : scaleLinear().domain([yMin, yMax]).nice().range([plotH, 0])
+    ? scaleLog().domain([yMin, yMax]).range([plotSide, 0])
+    : scaleLinear().domain([yMin, yMax]).nice().range([plotSide, 0])
 
   const xTicks = xScale.ticks(6)
   const yTicks = yScale.ticks(6)
@@ -139,7 +167,6 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
   const tickDir = style.tickInward ? -1 : 1 // inward = into the plotting area
   const labelGap = Math.round(style.fontSize * 0.45)
 
-  // Build polyline points from x/y arrays, skipping non-finite / out-of-log-domain points.
   function buildPathXY(xs: number[], ys: number[]): string {
     const segs: string[] = []
     let penDown = false
@@ -172,48 +199,108 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     return buildPathXY(t.x, t.y)
   }
 
-  // ── Legend geometry ──────────────────────────────────────────────────────
-  const showLegend = legendPosition !== 'none' && visible.length > 0
+  // ── Legend geometry (free placement + size) ───────────────────────────────
+  const showLegend = legend.visible && visible.length > 0
   const legendNames = visible.map((t) => ({
     name: t.name,
     color: t.color,
     lineWidth: t.lineWidth ?? DEFAULT_LINE_WIDTH,
   }))
+  const legendFs = style.fontSize * legend.scale
   const legendBoxW =
     legendNames.length > 0
-      ? Math.max(
-          ...legendNames.map((l) => l.name.length * style.fontSize * 0.52),
-        ) +
-        style.fontSize * 2.4
+      ? Math.max(...legendNames.map((l) => l.name.length * legendFs * 0.52)) +
+        legendFs * 2.4
       : 0
-  const legendLineH = style.fontSize * 1.35
-  const legendBoxH = legendNames.length * legendLineH + style.fontSize * 0.6
-  const legendPad = style.fontSize * 0.5
-  const legendX =
-    legendPosition === 'top-left' || legendPosition === 'bottom-left'
-      ? legendPad
-      : plotW - legendBoxW - legendPad
-  const legendY =
-    legendPosition === 'bottom-left' || legendPosition === 'bottom-right'
-      ? plotH - legendBoxH - legendPad
-      : legendPad
+  const legendLineH = legendFs * 1.35
+  const legendBoxH = legendNames.length * legendLineH + legendFs * 0.6
+
+  // Clamp the legend so it always stays inside the plot frame.
+  const maxXFrac = Math.max(0, 1 - legendBoxW / plotSide)
+  const maxYFrac = Math.max(0, 1 - legendBoxH / plotSide)
+  const legendX = clamp(legend.x, 0, maxXFrac) * plotSide
+  const legendY = clamp(legend.y, 0, maxYFrac) * plotSide
+
+  // ── Drag / resize the legend ──────────────────────────────────────────────
+  const dragRef = React.useRef<{
+    mode: 'move' | 'resize'
+    startX: number
+    startY: number
+    start: LegendLayout
+  } | null>(null)
+
+  const toPlot = (e: React.PointerEvent): { x: number; y: number } => {
+    const svg = innerRef.current
+    if (!svg) return { x: 0, y: 0 }
+    const rect = svg.getBoundingClientRect()
+    const sx = rect.width > 0 ? svgW / rect.width : 1
+    const sy = rect.height > 0 ? svgH / rect.height : 1
+    return {
+      x: (e.clientX - rect.left) * sx - margins.left,
+      y: (e.clientY - rect.top) * sy - margins.top,
+    }
+  }
+
+  const beginDrag = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
+    if (!onLegendChange) return
+    e.stopPropagation()
+    try {
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    } catch {
+      // non-fatal: pointer capture unavailable
+    }
+    const p = toPlot(e)
+    dragRef.current = { mode, startX: p.x, startY: p.y, start: legend }
+  }
+
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d || !onLegendChange) return
+    const p = toPlot(e)
+    if (d.mode === 'move') {
+      onLegendChange({
+        ...d.start,
+        x: clamp(d.start.x + (p.x - d.startX) / plotSide, 0, maxXFrac),
+        y: clamp(d.start.y + (p.y - d.startY) / plotSide, 0, maxYFrac),
+      })
+    } else {
+      onLegendChange({
+        ...d.start,
+        scale: clamp(d.start.scale + (p.x - d.startX) / 180, 0.5, 3),
+      })
+    }
+  }
+
+  const endDrag = (e: React.PointerEvent) => {
+    if (dragRef.current) {
+      try {
+        ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
+      } catch {
+        // non-fatal
+      }
+      dragRef.current = null
+    }
+  }
+
+  const interactive = !!onLegendChange
+  const handleSize = Math.max(7, legendFs * 0.42)
 
   return (
     <svg
-      ref={ref}
+      ref={setSvg}
       id="plot-svg"
       xmlns="http://www.w3.org/2000/svg"
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      style={{ fontFamily: style.fontFamily }}
+      width={svgW}
+      height={svgH}
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      style={{ fontFamily: style.fontFamily, maxWidth: '100%', maxHeight: '100%' }}
     >
       {/* Outer canvas background */}
-      <rect x={0} y={0} width={width} height={height} fill={PAPER} />
+      <rect x={0} y={0} width={svgW} height={svgH} fill={PAPER} />
 
       <g transform={`translate(${margins.left},${margins.top})`}>
         {/* Plot area background */}
-        <rect x={0} y={0} width={plotW} height={plotH} fill={PAPER} />
+        <rect x={0} y={0} width={plotSide} height={plotSide} fill={PAPER} />
 
         {/* X ticks */}
         {xTicks.map((tv, i) => {
@@ -223,9 +310,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
             <g key={`xt-${i}`}>
               <line
                 x1={px}
-                y1={plotH}
+                y1={plotSide}
                 x2={px}
-                y2={plotH + tickDir * tickLen}
+                y2={plotSide + tickDir * tickLen}
                 stroke={INK}
                 strokeWidth={style.axisThickness}
               />
@@ -241,7 +328,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
               )}
               <text
                 x={px}
-                y={plotH + tickLen + labelGap}
+                y={plotSide + tickLen + labelGap}
                 textAnchor="middle"
                 dominantBaseline="hanging"
                 fontSize={style.fontSize}
@@ -270,9 +357,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
               />
               {style.mirror && (
                 <line
-                  x1={plotW}
+                  x1={plotSide}
                   y1={py}
-                  x2={plotW + tickDir * tickLen}
+                  x2={plotSide + tickDir * tickLen}
                   y2={py}
                   stroke={INK}
                   strokeWidth={style.axisThickness}
@@ -298,8 +385,8 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
           <rect
             x={0}
             y={0}
-            width={plotW}
-            height={plotH}
+            width={plotSide}
+            height={plotSide}
             fill="none"
             stroke={INK}
             strokeWidth={style.axisThickness}
@@ -308,9 +395,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
           <>
             <line
               x1={0}
-              y1={plotH}
-              x2={plotW}
-              y2={plotH}
+              y1={plotSide}
+              x2={plotSide}
+              y2={plotSide}
               stroke={INK}
               strokeWidth={style.axisThickness}
             />
@@ -318,7 +405,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
               x1={0}
               y1={0}
               x2={0}
-              y2={plotH}
+              y2={plotSide}
               stroke={INK}
               strokeWidth={style.axisThickness}
             />
@@ -327,7 +414,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
 
         {/* Traces (clipped to plot area) */}
         <clipPath id="plot-clip">
-          <rect x={0} y={0} width={plotW} height={plotH} />
+          <rect x={0} y={0} width={plotSide} height={plotSide} />
         </clipPath>
         <g clipPath="url(#plot-clip)">
           {visible.map((t) => (
@@ -354,9 +441,15 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
           )}
         </g>
 
-        {/* Legend */}
+        {/* Legend — draggable & resizable */}
         {showLegend && (
-          <g transform={`translate(${legendX},${legendY})`}>
+          <g
+            transform={`translate(${legendX},${legendY})`}
+            onPointerDown={beginDrag('move')}
+            onPointerMove={onDragMove}
+            onPointerUp={endDrag}
+            style={interactive ? { cursor: 'move' } : undefined}
+          >
             <rect
               x={0}
               y={0}
@@ -367,22 +460,22 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
               strokeWidth={1}
             />
             {legendNames.map((l, i) => {
-              const cy = style.fontSize * 0.3 + legendLineH * (i + 0.5)
+              const cy = legendFs * 0.3 + legendLineH * (i + 0.5)
               return (
                 <g key={`lg-${i}`}>
                   <line
-                    x1={style.fontSize * 0.5}
+                    x1={legendFs * 0.5}
                     y1={cy}
-                    x2={style.fontSize * 1.8}
+                    x2={legendFs * 1.8}
                     y2={cy}
                     stroke={l.color}
                     strokeWidth={l.lineWidth}
                   />
                   <text
-                    x={style.fontSize * 2.1}
+                    x={legendFs * 2.1}
                     y={cy}
                     dominantBaseline="middle"
-                    fontSize={style.fontSize}
+                    fontSize={legendFs}
                     fontFamily={style.fontFamily}
                     fill={INK}
                   >
@@ -391,14 +484,30 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
                 </g>
               )
             })}
+            {/* Resize handle (UI chrome — excluded from export) */}
+            {interactive && (
+              <rect
+                data-noexport=""
+                x={legendBoxW - handleSize}
+                y={legendBoxH - handleSize}
+                width={handleSize}
+                height={handleSize}
+                fill={ACCENT}
+                fillOpacity={0.85}
+                onPointerDown={beginDrag('resize')}
+                onPointerMove={onDragMove}
+                onPointerUp={endDrag}
+                style={{ cursor: 'nwse-resize' }}
+              />
+            )}
           </g>
         )}
       </g>
 
       {/* X axis label */}
       <text
-        x={margins.left + plotW / 2}
-        y={height - Math.round(style.fontSize * 0.4)}
+        x={margins.left + plotSide / 2}
+        y={svgH - Math.round(style.fontSize * 0.4)}
         textAnchor="middle"
         fontSize={style.fontSize}
         fontFamily={style.fontFamily}
@@ -410,12 +519,12 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
       {/* Y axis label (rotated) */}
       <text
         x={Math.round(style.fontSize * 0.9)}
-        y={margins.top + plotH / 2}
+        y={margins.top + plotSide / 2}
         textAnchor="middle"
         fontSize={style.fontSize}
         fontFamily={style.fontFamily}
         fill={INK}
-        transform={`rotate(-90 ${Math.round(style.fontSize * 0.9)} ${margins.top + plotH / 2})`}
+        transform={`rotate(-90 ${Math.round(style.fontSize * 0.9)} ${margins.top + plotSide / 2})`}
       >
         {yLabel}
       </text>

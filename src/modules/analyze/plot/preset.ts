@@ -1,4 +1,5 @@
-import type { AxisMode, BaselineMode, LegendPosition } from '../types'
+import type { AxisMode, BaselineMode, LegendLayout, LegendPosition } from '../types'
+import { DEFAULT_LEGEND } from '../types'
 
 /**
  * Publication-plot style + persisted session display/measurement settings.
@@ -16,8 +17,10 @@ export interface PlotStyle {
   fontFamily: string
   fontSize: number
 
-  /** Where the legend sits, or hidden. */
+  /** Where the legend sits, or hidden. (Legacy — superseded by `legend`.) */
   legendPosition?: LegendPosition
+  /** Free-placed legend (position/size/visibility). */
+  legend?: LegendLayout
   /** PL horizontal axis mode (nm / eV). */
   axisMode?: AxisMode
   /** Raman excitation wavelength (nm). */
@@ -40,6 +43,7 @@ export const IGOR_PRESET: PlotStyle = {
 export const DEFAULT_PLOT_STYLE: PlotStyle = {
   ...IGOR_PRESET,
   legendPosition: 'top-right',
+  legend: { ...DEFAULT_LEGEND },
   axisMode: 'nm',
   laserNm: 532,
   normalize: false,

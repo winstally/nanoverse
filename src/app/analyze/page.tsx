@@ -17,10 +17,11 @@ import type { PeakModel, FitResult } from '@/modules/analyze/fit'
 import type {
   AxisMode,
   BaselineMode,
-  LegendPosition,
+  LegendLayout,
   MeasurementType,
   Trace,
 } from '@/modules/analyze/types'
+import { DEFAULT_LEGEND } from '@/modules/analyze/types'
 import { ProjectSwitcher } from '@/components/app/ProjectSwitcher'
 import { SectionLabel } from '@/components/app/SectionLabel'
 import { Separator } from '@/components/ui/separator'
@@ -69,8 +70,7 @@ export default function AnalyzePage() {
   const [xMode, setXMode] = React.useState<AxisMode>('nm')
   const [laserNm, setLaserNm] = React.useState<number>(532)
   const [doNormalize, setDoNormalize] = React.useState(false)
-  const [legendPosition, setLegendPosition] =
-    React.useState<LegendPosition>('top-right')
+  const [legend, setLegend] = React.useState<LegendLayout>({ ...DEFAULT_LEGEND })
   const [baselineMode, setBaselineMode] = React.useState<BaselineMode>('none')
 
   const [model, setModel] = React.useState<PeakModel>('gaussian')
@@ -115,7 +115,7 @@ export default function AnalyzePage() {
   const session = React.useMemo<AnalyzeSession>(() => {
     const style: PlotStyle = {
       ...DEFAULT_PLOT_STYLE,
-      legendPosition,
+      legend,
       axisMode: xMode,
       laserNm,
       normalize: doNormalize,
@@ -127,7 +127,7 @@ export default function AnalyzePage() {
     sessionName,
     traces,
     type,
-    legendPosition,
+    legend,
     xMode,
     laserNm,
     doNormalize,
@@ -154,7 +154,7 @@ export default function AnalyzePage() {
     setXMode(s.style?.axisMode ?? 'nm')
     setLaserNm(s.style?.laserNm ?? 532)
     setDoNormalize(s.style?.normalize ?? false)
-    setLegendPosition(s.style?.legendPosition ?? 'top-right')
+    setLegend(s.style?.legend ?? { ...DEFAULT_LEGEND })
     setBaselineMode(s.style?.baselineMode ?? 'none')
     setFit(null)
     setOverlay(false)
@@ -417,8 +417,11 @@ export default function AnalyzePage() {
             </AccordionTrigger>
             <AccordionContent>
               <DisplaySettings
-                legendPosition={legendPosition}
-                onLegendPosition={setLegendPosition}
+                legendVisible={legend.visible}
+                onLegendVisible={(v) =>
+                  setLegend((l) => ({ ...l, visible: v }))
+                }
+                onLegendReset={() => setLegend({ ...DEFAULT_LEGEND })}
                 baselineMode={baselineMode}
                 onBaselineMode={setBaselineMode}
               />
@@ -453,7 +456,8 @@ export default function AnalyzePage() {
               xLabel={xAxisLabel}
               yLabel={yLabel}
               style={DEFAULT_PLOT_STYLE}
-              legendPosition={legendPosition}
+              legend={legend}
+              onLegendChange={setLegend}
             />
           )}
         </div>
