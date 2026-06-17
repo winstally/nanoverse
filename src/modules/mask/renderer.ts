@@ -21,9 +21,9 @@ function drawShape(
   shape: Shape,
   cal: Calibration
 ): void {
-  const { x: upxX, y: upxY } = umPerPx(cal)
-  const toPxX = (uXum: number) => uXum / upxX
-  const toPxY = (uYum: number) => uYum / upxY
+  const upp = umPerPx(cal)
+  const toPxX = (uXum: number) => uXum / upp
+  const toPxY = (uYum: number) => uYum / upp
 
   switch (shape.kind) {
     case 'rect': {

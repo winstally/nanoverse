@@ -1,42 +1,47 @@
 export const SLIDE_W_CM = 12188825 / 360000 // 33.858...
-export const SLIDE_H_CM = 7616825 / 360000 // 21.158...
 export const UM_PER_CM = 14 // "20x: 1cm = 14um"
 export const SUBSTRATE_W_UM = SLIDE_W_CM * UM_PER_CM // ~474.0
-export const SUBSTRATE_H_UM = SLIDE_H_CM * UM_PER_CM // ~296.2
 
 export interface Calibration {
   dmdW: number
   dmdH: number
+  /** Physical field width (µm) — the magnification anchor (X axis). */
   substrateWUm: number
+  /** Physical field height (µm) — derived from the DMD aspect so pixels stay square. */
   substrateHUm: number
-  isotropic: boolean
+}
+
+/**
+ * Pixel pitch in µm/px. A maskless aligner projects the DMD through an objective
+ * with uniform magnification, and the micromirrors are square, so one DMD pixel
+ * maps to a physical *square*. There is a single pitch — it is isotropic by
+ * construction; the field height follows from the DMD aspect ratio.
+ */
+export function umPerPx(cal: Calibration): number {
+  return cal.substrateWUm / cal.dmdW
+}
+
+/** Field height (µm) that keeps pixels square for the given DMD + width anchor. */
+export function fieldHeightUm(cal: Calibration): number {
+  return cal.dmdH * umPerPx(cal)
 }
 
 export function defaultCalibration(): Calibration {
+  const dmdW = 1920
+  const dmdH = 1080
+  const substrateWUm = SUBSTRATE_W_UM
   return {
-    dmdW: 1920,
-    dmdH: 1080,
-    substrateWUm: SUBSTRATE_W_UM,
-    substrateHUm: SUBSTRATE_H_UM,
-    isotropic: false,
-  }
-}
-
-export function umPerPx(cal: Calibration): { x: number; y: number } {
-  if (cal.isotropic) {
-    const s = cal.substrateWUm / cal.dmdW
-    return { x: s, y: s }
-  }
-  return {
-    x: cal.substrateWUm / cal.dmdW,
-    y: cal.substrateHUm / cal.dmdH,
+    dmdW,
+    dmdH,
+    substrateWUm,
+    substrateHUm: (substrateWUm / dmdW) * dmdH,
   }
 }
 
 export function umToPxX(cal: Calibration, uXum: number): number {
-  return uXum / umPerPx(cal).x
+  return uXum / umPerPx(cal)
 }
 
 export function umToPxY(cal: Calibration, uYum: number): number {
-  return uYum / umPerPx(cal).y
+  return uYum / umPerPx(cal)
 }

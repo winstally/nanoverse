@@ -13,6 +13,7 @@ import { MaskDocument } from '@/modules/mask/document'
 import {
   EllipseShape,
   LineSpaceShape,
+  MIN_UM,
   newId,
   RectShape,
   Shape,
@@ -21,6 +22,7 @@ import {
 import { renderToCanvas } from '@/modules/mask/renderer'
 import { Ruler, RULER_SIZE } from '@/modules/mask/components/Ruler'
 import { ToolKind } from '@/modules/mask/components/Toolbar'
+import type { ToolDefaults } from '@/modules/mask/tool-defaults'
 
 type HandleId = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w'
 
@@ -43,7 +45,8 @@ interface DragState {
 }
 
 const HANDLE_PX = 8
-const MIN_UM = 0.5
+/** Below this pointer travel (screen px) a create gesture counts as a click, not a drag. */
+const CLICK_PX = 4
 /** Selection-chrome accent (mirrors --color-accent). Not part of the mask artifact. */
 const ACCENT = '#2f6df0'
 
@@ -51,12 +54,15 @@ interface MaskCanvasProps {
   doc: MaskDocument
   cal: Calibration
   tool: ToolKind
+  defaults: ToolDefaults
   selectedId: string | null
   onSelect: (id: string | null) => void
   onAdd: (shape: Shape) => void
   onUpdate: (id: string, patch: Partial<Shape>) => void
   onDelete: (id: string) => void
   onToolChange: (tool: ToolKind) => void
+  /** Called once when a move/resize gesture begins, to checkpoint undo history. */
+  onBeginEdit?: () => void
 }
 
 /** Bounding box of a shape, in µm. */
@@ -113,12 +119,14 @@ export function MaskCanvas({
   doc,
   cal,
   tool,
+  defaults,
   selectedId,
   onSelect,
   onAdd,
   onUpdate,
   onDelete,
   onToolChange,
+  onBeginEdit,
 }: MaskCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -270,6 +278,7 @@ export function MaskCanvas({
         if (selected) {
           const h = hitHandle(umX, umY)
           if (h) {
+            onBeginEdit?.()
             dragRef.current = {
               mode: 'resize',
               shapeId: selected.id,
@@ -284,6 +293,7 @@ export function MaskCanvas({
         const hit = hitShape(umX, umY)
         if (hit) {
           onSelect(hit.id)
+          onBeginEdit?.()
           dragRef.current = {
             mode: 'move',
             shapeId: hit.id,
@@ -307,7 +317,7 @@ export function MaskCanvas({
       }
       setPreview({ x: umX, y: umY, w: 0, h: 0 })
     },
-    [tool, selected, hitHandle, hitShape, onSelect, pointerToUm],
+    [tool, selected, hitHandle, hitShape, onSelect, pointerToUm, onBeginEdit],
   )
 
   const onPointerMove = useCallback(
@@ -383,13 +393,23 @@ export function MaskCanvas({
       const w = Math.abs(umX - drag.startUmX)
       const h = Math.abs(umY - drag.startUmY)
 
-      const made = createShape(tool, { x, y, w, h }, drag.startUmX, drag.startUmY)
+      // A negligible drag is treated as a click: place a default-sized shape.
+      const isClick = Math.max(w, h) * scale < CLICK_PX
+
+      const made = createShape(
+        tool,
+        { x, y, w, h },
+        drag.startUmX,
+        drag.startUmY,
+        defaults,
+        isClick,
+      )
       if (made) {
         onAdd(made)
         onToolChange('select')
       }
     },
-    [tool, onAdd, onToolChange, pointerToUm],
+    [tool, defaults, scale, onAdd, onToolChange, pointerToUm],
   )
 
   // Delete key removes selection.
@@ -514,44 +534,68 @@ export function MaskCanvas({
   )
 }
 
-/** Build a shape from the dragged box for the active creation tool. */
+/**
+ * Build a shape from the create gesture for the active tool. On a click
+ * (`isClick`) the shape takes its default size, centred on the click point;
+ * otherwise it takes the dragged box.
+ */
 function createShape(
   tool: ToolKind,
   box: Box,
   startX: number,
   startY: number,
+  defaults: ToolDefaults,
+  isClick: boolean,
 ): Shape | null {
   const w = Math.max(box.w, MIN_UM)
   const h = Math.max(box.h, MIN_UM)
 
   switch (tool) {
     case 'rect': {
+      const rw = isClick ? defaults.rect.w : w
+      const rh = isClick ? defaults.rect.h : h
       const shape: RectShape = {
         id: newId('rect-'),
         kind: 'rect',
-        x: box.x,
-        y: box.y,
-        w,
-        h,
+        x: isClick ? Math.max(0, startX - rw / 2) : box.x,
+        y: isClick ? Math.max(0, startY - rh / 2) : box.y,
+        w: rw,
+        h: rh,
       }
       return shape
     }
     case 'ellipse': {
+      const ew = isClick ? defaults.ellipse.w : w
+      const eh = isClick ? defaults.ellipse.h : h
       const shape: EllipseShape = {
         id: newId('ell-'),
         kind: 'ellipse',
-        x: box.x,
-        y: box.y,
-        w,
-        h,
+        x: isClick ? Math.max(0, startX - ew / 2) : box.x,
+        y: isClick ? Math.max(0, startY - eh / 2) : box.y,
+        w: ew,
+        h: eh,
       }
       return shape
     }
     case 'line': {
-      // a thin rect: dominant axis = length, fixed thin width
+      // a thin rect: dominant axis = length, fixed thin thickness
+      if (isClick) {
+        // Click: a horizontal line of default length, centred on the click.
+        const length = defaults.line.length
+        const thickness = defaults.line.thickness
+        const shape: RectShape = {
+          id: newId('line-'),
+          kind: 'rect',
+          x: Math.max(0, startX - length / 2),
+          y: Math.max(0, startY - thickness / 2),
+          w: length,
+          h: thickness,
+        }
+        return shape
+      }
       const horizontal = box.w >= box.h
       const length = Math.max(horizontal ? box.w : box.h, MIN_UM)
-      const thickness = 1
+      const thickness = defaults.line.thickness
       const shape: RectShape = {
         id: newId('line-'),
         kind: 'rect',
@@ -563,7 +607,7 @@ function createShape(
       return shape
     }
     case 'text': {
-      const heightUm = box.h > MIN_UM ? box.h : 20
+      const heightUm = isClick || box.h <= MIN_UM ? defaults.text.heightUm : box.h
       const shape: TextShape = {
         id: newId('text-'),
         kind: 'text',

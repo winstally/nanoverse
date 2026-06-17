@@ -38,6 +38,7 @@ import {
   Info,
   ScrollText,
   Download,
+  Upload,
   Trash2,
   ExternalLink,
   FlaskConical,
@@ -75,6 +76,8 @@ export function SystemMenu({ className }: SystemMenuProps) {
   const [aboutOpen, setAboutOpen] = React.useState(false)
   const [logOpen, setLogOpen] = React.useState(false)
   const [confirmClearOpen, setConfirmClearOpen] = React.useState(false)
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const [storage, setStorage] = React.useState<{ usage: number; quota: number } | null>(
     null
@@ -115,6 +118,28 @@ export function SystemMenu({ className }: SystemMenuProps) {
       })
       .catch(() => {
         toast.error('書き出しに失敗しました')
+      })
+  }
+
+  function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    // Reset so selecting the same file again still fires onChange.
+    event.target.value = ''
+    if (!file) return
+    importAllData(file)
+      .then((result) => {
+        const msg = `${result.maskDocs} 件のマスク・${result.analyzeSessions} 件の解析データを読み込みました`
+        logEvent(msg)
+        toast.success(msg, {
+          description:
+            result.skipped > 0
+              ? `${result.skipped} 件は形式が不正なため除外しました`
+              : undefined,
+        })
+      })
+      .catch((err: unknown) => {
+        const reason = err instanceof Error ? err.message : '読み込みに失敗しました'
+        toast.error('読み込みに失敗しました', { description: reason })
       })
   }
 
@@ -168,6 +193,10 @@ export function SystemMenu({ className }: SystemMenuProps) {
             <Download />
             データを書き出す
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+            <Upload />
+            データを読み込む
+          </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             onClick={() => setConfirmClearOpen(true)}
@@ -186,6 +215,15 @@ export function SystemMenu({ className }: SystemMenuProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Hidden file input backing the "データを読み込む" menu item. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImport}
+      />
 
       {/* About dialog */}
       <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>

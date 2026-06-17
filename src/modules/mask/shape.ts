@@ -1,5 +1,8 @@
 export type ShapeKind = 'rect' | 'ellipse' | 'text' | 'lineSpace' | 'grid'
 
+/** Smallest dimension (µm) any shape may have, to keep it selectable/visible. */
+export const MIN_UM = 0.5
+
 export interface RectShape {
   id: string
   kind: 'rect'

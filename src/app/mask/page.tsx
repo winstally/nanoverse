@@ -9,11 +9,17 @@ import {
   MaskDocument,
   Polarity,
 } from '@/modules/mask/document'
-import { Shape } from '@/modules/mask/shape'
+import { Shape, newId } from '@/modules/mask/shape'
 import { downloadBmp } from '@/modules/mask/renderer'
 import { Toolbar, ToolKind } from '@/modules/mask/components/Toolbar'
 import { MaskCanvas } from '@/modules/mask/components/MaskCanvas'
 import { Inspector } from '@/modules/mask/components/Inspector'
+import { ToolDefaultsPanel } from '@/modules/mask/components/ToolDefaultsPanel'
+import {
+  DEFAULT_TOOL_DEFAULTS,
+  isDefaultableTool,
+  ToolDefaults,
+} from '@/modules/mask/tool-defaults'
 import { CalibrationPanel } from '@/modules/mask/components/CalibrationPanel'
 import { GeneratorPanel } from '@/modules/mask/components/GeneratorPanel'
 import { Button } from '@/components/ui/button'
@@ -30,6 +36,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { useAutosave } from '@/hooks/use-autosave'
+import { useHistory } from '@/hooks/use-history'
 import {
   deleteMaskDoc,
   listMaskDocs,
@@ -43,10 +50,10 @@ const initialCal = defaultCalibration()
 
 function MaskTool() {
   const [cal, setCal] = useState<Calibration>(initialCal)
-  const [doc, setDoc] = useState<MaskDocument>(() =>
-    createDefaultDocument(initialCal),
-  )
+  const history = useHistory<MaskDocument>(createDefaultDocument(initialCal))
+  const doc = history.state
   const [tool, setTool] = useState<ToolKind>('select')
+  const [toolDefaults, setToolDefaults] = useState<ToolDefaults>(DEFAULT_TOOL_DEFAULTS)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [savedDocs, setSavedDocs] = useState<ProjectSwitcherItem[]>([])
 
@@ -92,48 +99,92 @@ function MaskTool() {
   const { status } = useAutosave(doc, persist)
 
   // --- Shape mutations -----------------------------------------------------
-  const addShape = useCallback((shape: Shape) => {
-    setDoc((d) => ({ ...d, shapes: [...d.shapes, shape] }))
-    setSelectedId(shape.id)
-  }, [])
+  const addShape = useCallback(
+    (shape: Shape) => {
+      history.set((d) => ({ ...d, shapes: [...d.shapes, shape] }))
+      setSelectedId(shape.id)
+    },
+    [history],
+  )
 
-  const updateShape = useCallback((id: string, patch: Partial<Shape>) => {
-    setDoc((d) => ({
-      ...d,
-      shapes: d.shapes.map((s) =>
-        s.id === id ? ({ ...s, ...patch } as Shape) : s,
-      ),
-    }))
-  }, [])
+  // Live edits (dragging) are coalesced into one undo step — see `onBeginEdit`
+  // (history.snapshot) on the canvas — so they don't push per-frame.
+  const updateShape = useCallback(
+    (id: string, patch: Partial<Shape>) => {
+      history.set(
+        (d) => ({
+          ...d,
+          shapes: d.shapes.map((s) =>
+            s.id === id ? ({ ...s, ...patch } as Shape) : s,
+          ),
+        }),
+        { history: false },
+      )
+    },
+    [history],
+  )
 
-  const deleteShape = useCallback((id: string) => {
-    setDoc((d) => ({ ...d, shapes: d.shapes.filter((s) => s.id !== id) }))
-    setSelectedId((cur) => (cur === id ? null : cur))
-  }, [])
+  const deleteShape = useCallback(
+    (id: string) => {
+      history.set((d) => ({
+        ...d,
+        shapes: d.shapes.filter((s) => s.id !== id),
+      }))
+      setSelectedId((cur) => (cur === id ? null : cur))
+    },
+    [history],
+  )
 
-  const setPolarity = useCallback((polarity: Polarity) => {
-    setDoc((d) => ({ ...d, polarity }))
-  }, [])
+  const setPolarity = useCallback(
+    (polarity: Polarity) => {
+      history.set((d) => ({ ...d, polarity }))
+    },
+    [history],
+  )
+
+  // Duplicate the selected shape, offset slightly, and select the copy.
+  const duplicateSelected = useCallback(() => {
+    if (!selectedId) return
+    const src = doc.shapes.find((s) => s.id === selectedId)
+    if (!src) return
+    const copy = {
+      ...src,
+      id: newId(`${src.kind}-`),
+      x: src.x + 8,
+      y: src.y + 8,
+    } as Shape
+    history.set((d) => ({ ...d, shapes: [...d.shapes, copy] }))
+    setSelectedId(copy.id)
+  }, [doc.shapes, selectedId, history])
 
   // --- Project actions -----------------------------------------------------
-  const handleRename = useCallback((name: string) => {
-    setDoc((d) => ({ ...d, name }))
-  }, [])
+  // Renaming on every keystroke shouldn't flood undo, so it's not recorded.
+  const handleRename = useCallback(
+    (name: string) => {
+      history.set((d) => ({ ...d, name }), { history: false })
+    },
+    [history],
+  )
 
   // Apply a loaded document to local state. Shared by handleSelect (user click)
   // and the URL → state hydration effect. Caller logs/sets the URL param.
   const applyLoadedDoc = useCallback((loaded: Awaited<ReturnType<typeof loadMaskDoc>>) => {
     if (!loaded) return
+    // Width is the magnification anchor; re-derive the field height from the DMD
+    // aspect so pixels are square. This also normalises legacy masks that were
+    // saved with an independent (anisotropic) height.
+    const pitch = loaded.widthUm / cal.dmdW
+    const heightUm = cal.dmdH * pitch
     // Drop persistence metadata (updatedAt) — keep only MaskDocument fields.
     const next: MaskDocument = {
       id: loaded.id,
       name: loaded.name,
       widthUm: loaded.widthUm,
-      heightUm: loaded.heightUm,
+      heightUm,
       shapes: loaded.shapes,
       polarity: loaded.polarity,
     }
-    setDoc(next)
+    history.reset(next)
     setCal((c) => ({
       ...c,
       substrateWUm: next.widthUm,
@@ -142,7 +193,7 @@ function MaskTool() {
     setSelectedId(null)
     setTool('select')
     return next
-  }, [])
+  }, [history, cal.dmdW, cal.dmdH])
 
   const handleSelect = useCallback(
     async (id: string) => {
@@ -162,7 +213,7 @@ function MaskTool() {
 
   const handleCreateNew = useCallback(() => {
     const fresh = createDefaultDocument(defaultCalibration())
-    setDoc(fresh)
+    history.reset(fresh)
     setCal(defaultCalibration())
     setSelectedId(null)
     setTool('select')
@@ -170,7 +221,7 @@ function MaskTool() {
     // fresh doc is persisted and appears in the saved list.
     void setProjectParam(null)
     logEvent('新規マスクを作成しました')
-  }, [setProjectParam])
+  }, [history, setProjectParam])
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -226,6 +277,71 @@ function MaskTool() {
     logEvent(`BMP を出力しました: ${base}.bmp`)
   }, [doc, cal])
 
+  // --- Keyboard shortcuts --------------------------------------------------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const typing =
+        !!el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable)
+      const mod = e.metaKey || e.ctrlKey
+
+      // Undo / redo (Cmd/Ctrl+Z, Shift for redo; Ctrl+Y also redoes).
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        if (typing) return
+        e.preventDefault()
+        if (e.shiftKey) history.redo()
+        else history.undo()
+        return
+      }
+      if (mod && (e.key === 'y' || e.key === 'Y')) {
+        if (typing) return
+        e.preventDefault()
+        history.redo()
+        return
+      }
+
+      // Single-key commands (ignored while typing or with modifiers held).
+      if (typing || mod || e.altKey) return
+      switch (e.key.toLowerCase()) {
+        case 'd':
+          if (selectedId) {
+            e.preventDefault()
+            duplicateSelected()
+          }
+          break
+        case 'v':
+          setTool('select')
+          break
+        case 'r':
+          setTool('rect')
+          break
+        case 'o':
+          setTool('ellipse')
+          break
+        case 'l':
+          setTool('line')
+          break
+        case 't':
+          setTool('text')
+          break
+        case 's':
+          setTool('lineSpace')
+          break
+        case 'g':
+          setTool('grid')
+          break
+        case 'escape':
+          setSelectedId(null)
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [history, selectedId, duplicateSelected])
+
   const isGenerator = tool === 'lineSpace' || tool === 'grid'
 
   const panel = (
@@ -254,6 +370,12 @@ function MaskTool() {
           <div className="flex flex-col gap-3">
             {isGenerator ? (
               <GeneratorPanel kind={tool} onAdd={addShape} />
+            ) : isDefaultableTool(tool) ? (
+              <ToolDefaultsPanel
+                tool={tool}
+                defaults={toolDefaults}
+                onChange={setToolDefaults}
+              />
             ) : selected ? (
               <Inspector
                 shape={selected}
@@ -307,12 +429,14 @@ function MaskTool() {
           doc={doc}
           cal={cal}
           tool={tool}
+          defaults={toolDefaults}
           selectedId={selectedId}
           onSelect={setSelectedId}
           onAdd={addShape}
           onUpdate={updateShape}
           onDelete={deleteShape}
           onToolChange={setTool}
+          onBeginEdit={history.snapshot}
         />
       </section>
     </ToolLayout>
