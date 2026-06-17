@@ -6,6 +6,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -147,9 +148,11 @@ export function SystemMenu({ className }: SystemMenuProps) {
           align="end"
           className="w-56"
         >
-          <DropdownMenuLabel>
-            {APP_NAME} v{APP_VERSION}
-          </DropdownMenuLabel>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>
+              {APP_NAME} v{APP_VERSION}
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setAboutOpen(true)}>
             <Info />
