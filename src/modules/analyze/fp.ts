@@ -34,7 +34,21 @@ export interface FpOptions {
   mMax: number
 }
 
+/**
+ * One Fabry–Pérot mode within the search range. `calcNm` is the theoretical
+ * resonance λ = A/(m+δ); `obsNm`/`residualNm` are filled in only where an
+ * observed peak was matched to this mode (null otherwise).
+ */
+export interface FpMode {
+  m: number
+  calcNm: number
+  obsNm: number | null
+  residualNm: number | null
+}
+
 export interface FpFit {
+  /** Theoretical comb across the whole search range (observed + un-observed modes). */
+  modes: FpMode[]
   /** Selected peak wavelengths (nm), ascending. */
   peaksNm: number[]
   /** Mode number assigned to each peak (descending: mStart, mStart-1, …). */
@@ -522,6 +536,7 @@ function fitForMStart(peaksNm: number[], L: number, mStart: number): FpFit {
   const rmse = Math.sqrt(sumSq / n)
 
   return {
+    modes: [],
     peaksNm: peaksNm.slice(),
     m,
     calcNm: calc,
@@ -532,6 +547,34 @@ function fitForMStart(peaksNm: number[], L: number, mStart: number): FpFit {
     rmseNm: rmse,
     mStart: Math.trunc(mStart),
   }
+}
+
+/**
+ * Build the full theoretical comb across [minWl, maxWl]: every integer mode m
+ * whose λ=A/(m+δ) lands in range, ascending by wavelength. Observed peaks (by
+ * mode number) are matched in so their deviation is shown; un-observed modes get
+ * null obs/residual.
+ */
+function buildModes(fit: FpFit, minWl: number, maxWl: number): FpMode[] {
+  const { A, delta } = fit
+  if (!Number.isFinite(A) || A <= 0 || maxWl <= 0 || minWl <= 0) return []
+  const obsByM = new Map<number, number>()
+  fit.m.forEach((mm, i) => obsByM.set(mm, fit.peaksNm[i]))
+
+  // λ=A/(m+δ): larger m ⇒ shorter λ. m∈[A/maxWl−δ, A/minWl−δ].
+  const mLo = Math.ceil(A / maxWl - delta)
+  const mHi = Math.floor(A / minWl - delta)
+  if (!Number.isFinite(mLo) || !Number.isFinite(mHi) || mHi - mLo > 100000) {
+    return []
+  }
+  const modes: FpMode[] = []
+  for (let mm = mHi; mm >= mLo; mm--) {
+    const calc = A / (mm + delta)
+    if (calc < minWl || calc > maxWl) continue
+    const obs = obsByM.has(mm) ? (obsByM.get(mm) as number) : null
+    modes.push({ m: mm, calcNm: calc, obsNm: obs, residualNm: obs != null ? obs - calc : null })
+  }
+  return modes
 }
 
 /** Choose the integer mStart giving -0.5 <= delta < 0.5 (port of choose_mode_start). */
@@ -592,5 +635,6 @@ export function fitFp(x: number[], y: number[], opts: FpOptions): FpResult {
 
   fit.effectiveProminence = det.effectiveProminence
   fit.effectiveDistanceNm = det.effectiveDistanceNm
+  fit.modes = buildModes(fit, opts.minWl, opts.maxWl)
   return { ok: true, fit }
 }

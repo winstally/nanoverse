@@ -409,7 +409,11 @@ function AnalyzeTool() {
   // space (same transform as the trace data), so the vertical markers line up.
   const fpVerticalLines = React.useMemo<number[] | undefined>(() => {
     if (analysisType !== 'fp' || !fpResultFit) return undefined
-    return transformX(fpResultFit.peaksNm, type, transformOpts).x
+    return transformX(
+      fpResultFit.modes.map((d) => d.calcNm),
+      type,
+      transformOpts,
+    ).x
   }, [analysisType, fpResultFit, type, transformOpts])
 
   const yLabel = doNormalize ? 'Norm. Intensity' : 'Intensity'

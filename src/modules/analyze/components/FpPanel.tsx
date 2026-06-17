@@ -54,12 +54,12 @@ function toCsv(fit: FpFit): string {
   const header = ['m', 'lambda_obs_nm', 'lambda_calc_nm', 'residual_nm'].join(
     ',',
   )
-  const rows = fit.m.map((mi, i) =>
+  const rows = fit.modes.map((d) =>
     [
-      mi,
-      fit.peaksNm[i].toFixed(6),
-      fit.calcNm[i].toFixed(6),
-      fit.residualNm[i].toFixed(6),
+      d.m,
+      d.obsNm != null ? d.obsNm.toFixed(6) : '',
+      d.calcNm.toFixed(6),
+      d.residualNm != null ? d.residualNm.toFixed(6) : '',
     ].join(','),
   )
   return [header, ...rows].join('\r\n')
@@ -233,7 +233,10 @@ export function FpPanel({
             <Metric label="δ" value={fmt(fit.delta)} />
             <Metric label="A" value={fmt(fit.A, 3)} unit=" nm" />
             <Metric label="RMSE" value={fmt(fit.rmseNm, 3)} unit=" nm" />
-            <Metric label="ピーク数" value={String(fit.peaksNm.length)} />
+            <Metric
+              label="モード数"
+              value={`${fit.modes.filter((d) => d.obsNm != null).length} / ${fit.modes.length}`}
+            />
             <Metric label="m_start" value={String(fit.mStart)} />
             {fit.effectiveProminence != null && (
               <Metric
@@ -258,18 +261,25 @@ export function FpPanel({
                 </tr>
               </thead>
               <tbody>
-                {fit.m.map((mi, i) => (
+                {fit.modes.map((d, i) => (
                   <tr
-                    key={i}
+                    key={d.m}
                     className={cn(
-                      'tnum border-t border-border text-right text-foreground',
+                      'tnum border-t border-border text-right',
                       i % 2 === 1 && 'bg-muted/50',
+                      d.obsNm != null
+                        ? 'text-foreground'
+                        : 'text-muted-foreground',
                     )}
                   >
-                    <td className="px-2 py-1 text-left">{mi}</td>
-                    <td className="px-2 py-1">{fmt(fit.peaksNm[i], 2)}</td>
-                    <td className="px-2 py-1">{fmt(fit.calcNm[i], 2)}</td>
-                    <td className="px-2 py-1">{fmt(fit.residualNm[i], 3)}</td>
+                    <td className="px-2 py-1 text-left">{d.m}</td>
+                    <td className="px-2 py-1">
+                      {d.obsNm != null ? fmt(d.obsNm, 2) : '—'}
+                    </td>
+                    <td className="px-2 py-1">{fmt(d.calcNm, 2)}</td>
+                    <td className="px-2 py-1">
+                      {d.residualNm != null ? fmt(d.residualNm, 3) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
