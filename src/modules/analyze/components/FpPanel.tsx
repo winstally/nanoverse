@@ -235,6 +235,15 @@ export function FpPanel({
             <Metric label="RMSE" value={fmt(fit.rmseNm, 3)} unit=" nm" />
             <Metric label="ピーク数" value={String(fit.peaksNm.length)} />
             <Metric label="m_start" value={String(fit.mStart)} />
+            {fit.effectiveProminence != null && (
+              <Metric
+                label="検出prominence"
+                value={fmt(
+                  fit.effectiveProminence,
+                  fit.effectiveProminence >= 100 ? 0 : 2,
+                )}
+              />
+            )}
           </div>
 
           {/* Per-mode table */}

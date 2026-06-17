@@ -53,6 +53,10 @@ export interface FpFit {
   rmseNm: number
   /** Mode number assigned to the first (shortest-λ) selected peak. */
   mStart: number
+  /** Prominence actually used (auto-lowered from the requested value if needed). */
+  effectiveProminence?: number
+  /** Min peak spacing (nm) actually used (auto-reduced if needed). */
+  effectiveDistanceNm?: number
 }
 
 export type FpResult = { ok: true; fit: FpFit } | { ok: false; error: string }
@@ -325,7 +329,12 @@ function detectMainPeaks(
   x: number[],
   y: number[],
   opts: FpOptions,
-): { peaks: number[]; error?: string } {
+): {
+  peaks: number[]
+  effectiveProminence?: number
+  effectiveDistanceNm?: number
+  error?: string
+} {
   // Restrict to [minWl, maxWl].
   const xs: number[] = []
   const ys: number[] = []
@@ -351,14 +360,56 @@ function detectMainPeaks(
     Math.round(dx > 0 ? opts.distanceNm / dx : 1),
   )
 
-  const peakIdx = findPeaks(ySmooth, opts.prominence, distanceSamples)
+  // Smoothed-signal range (used to derive adaptive prominence thresholds, so the
+  // detector works regardless of the data's absolute intensity scale).
+  let smin = Infinity
+  let smax = -Infinity
+  for (const v of ySmooth) {
+    if (v < smin) smin = v
+    if (v > smax) smax = v
+  }
+  const range = smax - smin
+
+  // Adaptive search: try the requested prominence first, then progressively
+  // lower thresholds (fractions of the signal range), and if still short, relax
+  // the minimum spacing. Pick the HIGHEST prominence that yields >=3 peaks
+  // (cleanest set). This avoids the user having to hand-tune prominence/distance.
+  const promLadder: number[] = [opts.prominence]
+  for (const f of [0.25, 0.15, 0.1, 0.06, 0.03, 0.015, 0.008]) {
+    const p = range * f
+    if (p > 0 && p < opts.prominence) promLadder.push(p)
+  }
+  const distLadder = [
+    distanceSamples,
+    Math.max(1, Math.floor(distanceSamples / 2)),
+    1,
+  ]
+
+  let peakIdx: number[] = []
+  let usedProm = opts.prominence
+  let usedDist = distanceSamples
+  outer: for (const dist of distLadder) {
+    for (const prom of promLadder) {
+      const found = findPeaks(ySmooth, prom, dist)
+      if (found.length >= 3) {
+        peakIdx = found
+        usedProm = prom
+        usedDist = dist
+        break outer
+      }
+    }
+  }
+
   if (peakIdx.length < 3) {
     return {
       peaks: [],
       error:
-        'ピークが少なすぎます。prominence か distance-nm を下げてください。',
+        'ピークを検出できませんでした。波長範囲を広げるか、データを確認してください。',
     }
   }
+
+  const effectiveProminence = usedProm
+  const effectiveDistanceNm = usedDist * dx
 
   // Refine each detected peak to the RAW maximum within ±refineNm.
   const refined: number[] = []
@@ -390,7 +441,7 @@ function detectMainPeaks(
     }
   }
   peaks.sort((a, b) => a - b)
-  return { peaks }
+  return { peaks, effectiveProminence, effectiveDistanceNm }
 }
 
 // ── linear fit (port of fit_for_m_start) ──────────────────────────────────────
@@ -499,5 +550,7 @@ export function fitFp(x: number[], y: number[], opts: FpOptions): FpResult {
     return { ok: false, error: 'フィットに失敗しました' }
   }
 
+  fit.effectiveProminence = det.effectiveProminence
+  fit.effectiveDistanceNm = det.effectiveDistanceNm
   return { ok: true, fit }
 }
