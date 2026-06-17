@@ -23,8 +23,11 @@ export interface NumberFieldProps {
  * Labelled numeric input built on shadcn Input + Label, with an optional unit
  * suffix shown in muted text inside the field. Numbers use tabular figures.
  *
- * onChange fires with the parsed number; empty / unparseable input is ignored
- * (the field keeps the typed text so the user can finish editing).
+ * Editing model: the input holds its own text while focused, so the user can
+ * clear it and type freely (empty / "1." / "-" intermediate states are allowed).
+ * A valid number is committed to `onChange` on every keystroke; on blur the text
+ * is normalised back to the committed value. While unfocused the text tracks the
+ * `value` prop (so external changes — load, reset — show up).
  */
 export function NumberField({
   label,
@@ -41,6 +44,18 @@ export function NumberField({
   const reactId = React.useId()
   const inputId = id ?? reactId
 
+  const [text, setText] = React.useState(() =>
+    Number.isFinite(value) ? String(value) : '',
+  )
+  const focused = React.useRef(false)
+
+  // Track external value changes while the field isn't being edited.
+  React.useEffect(() => {
+    if (!focused.current) {
+      setText(Number.isFinite(value) ? String(value) : '')
+    }
+  }, [value])
+
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       <Label htmlFor={inputId} className="text-muted-foreground">
@@ -49,17 +64,26 @@ export function NumberField({
       <div className="relative">
         <Input
           id={inputId}
-          type="number"
+          type="text"
           inputMode="decimal"
-          value={Number.isFinite(value) ? value : ''}
+          value={text}
           step={step}
           min={min}
           max={max}
           disabled={disabled}
+          onFocus={() => {
+            focused.current = true
+          }}
           onChange={(e) => {
-            const next = e.currentTarget.valueAsNumber
-            if (Number.isNaN(next)) return
-            onChange(next)
+            const raw = e.target.value
+            setText(raw)
+            const n = parseFloat(raw)
+            if (Number.isFinite(n)) onChange(n)
+          }}
+          onBlur={() => {
+            focused.current = false
+            // Snap the displayed text back to the committed numeric value.
+            setText(Number.isFinite(value) ? String(value) : '')
           }}
           className={cn('tnum', unit && 'pr-9')}
         />

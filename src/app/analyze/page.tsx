@@ -238,19 +238,44 @@ export default function AnalyzePage() {
   )
 
   // ── Trace mutations ───────────────────────────────────────────────────────
-  const handleTraces = React.useCallback((incoming: Trace[]) => {
-    setTraces((prev) => {
-      const seen = new Set(prev.map((t) => t.id))
-      const merged = incoming.map((t) => {
-        let id = t.id
-        let n = 1
-        while (seen.has(id)) id = `${t.id}-${n++}`
-        seen.add(id)
-        return { ...t, id }
+  const handleTraces = React.useCallback(
+    (incoming: Trace[]) => {
+      setTraces((prev) => {
+        const seen = new Set(prev.map((t) => t.id))
+        const merged = incoming.map((t) => {
+          let id = t.id
+          let n = 1
+          while (seen.has(id)) id = `${t.id}-${n++}`
+          seen.add(id)
+          return { ...t, id }
+        })
+        return [...prev, ...merged]
       })
-      return [...prev, ...merged]
-    })
-  }, [])
+
+      // Don't silently cut data: while the FP search range is still the factory
+      // default, snap it to the loaded data's wavelength extent. Once a custom
+      // range is set (by the user or a saved session) this leaves it alone.
+      if (
+        fpMinWl === DEFAULT_FP_OPTIONS.minWl &&
+        fpMaxWl === DEFAULT_FP_OPTIONS.maxWl
+      ) {
+        const first = incoming.find((t) => t.x.length > 0)
+        if (first) {
+          let lo = Infinity
+          let hi = -Infinity
+          for (const v of first.x) {
+            if (v < lo) lo = v
+            if (v > hi) hi = v
+          }
+          if (Number.isFinite(lo) && Number.isFinite(hi)) {
+            setFpMinWl(Math.floor(lo))
+            setFpMaxWl(Math.ceil(hi))
+          }
+        }
+      }
+    },
+    [fpMinWl, fpMaxWl],
+  )
 
   const handleTraceRename = React.useCallback((id: string, name: string) => {
     setTraces((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)))
