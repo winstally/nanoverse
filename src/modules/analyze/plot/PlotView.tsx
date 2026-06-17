@@ -34,6 +34,8 @@ export interface PlotViewProps {
    * area, at strokeWidth 2.
    */
   verticalLines?: number[]
+  /** Legend label for the vertical marker lines (e.g. "FP共振"). */
+  verticalLineLabel?: string
 }
 
 // Muted fit-curve overlay fallback (ink-2). The publication plot's data/axes
@@ -44,8 +46,8 @@ const OVERLAY_DEFAULT_COLOR = '#5b6470'
 const PAPER = '#ffffff'
 const INK = '#000000'
 const ACCENT = '#2f6df0' // legend drag affordance (chrome, stripped from export)
-// Vertical marker lines (FP peak positions): muted but visible blue.
-const MARKER = '#2f6df0'
+// Vertical marker lines (FP peak positions): green.
+const MARKER = '#16a34a'
 
 // The overall SVG box; the data area inside is forced SQUARE.
 const DEFAULT_WIDTH = 760
@@ -60,7 +62,9 @@ function computeMargins(style: PlotStyle) {
   const fs = style.fontSize
   return {
     top: Math.round(fs * 0.8),
-    right: Math.round(fs * 0.8),
+    // Wide enough to fit half of the last x-axis tick label (centred on the
+    // right frame edge), so e.g. "1600" isn't clipped.
+    right: Math.round(fs * 1.8),
     bottom: Math.round(fs * 3.2),
     left: Math.round(fs * 4.0),
   }
@@ -120,6 +124,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     height = DEFAULT_HEIGHT,
     overlay,
     verticalLines,
+    verticalLineLabel,
   },
   ref,
 ) {
@@ -216,6 +221,10 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     color: t.color,
     lineWidth: t.lineWidth ?? DEFAULT_LINE_WIDTH,
   }))
+  // Include the FP comb as its own legend entry when markers are shown.
+  if (verticalLines && verticalLines.length > 0 && verticalLineLabel) {
+    legendNames.push({ name: verticalLineLabel, color: MARKER, lineWidth: 2 })
+  }
   const legendFs = style.fontSize * legend.scale
   const legendBoxW =
     legendNames.length > 0

@@ -426,7 +426,8 @@ function AnalyzeTool() {
     ).x
   }, [analysisType, fpResultFit, type, transformOpts])
 
-  const yLabel = doNormalize ? 'Norm. Intensity' : 'Intensity'
+  // Y-axis label: measurement-specific intensity in arbitrary units.
+  const yLabel = `${doNormalize ? 'Norm. ' : ''}${type === 'PL' ? 'PL ' : ''}Intensity (a.u.)`
   const xAxisLabel = `${axisInfo.xLabel} (${axisInfo.xUnit})`
 
   // ── Fit ───────────────────────────────────────────────────────────────────
@@ -675,6 +676,7 @@ function AnalyzeTool() {
               traces={plotTraces}
               overlay={analysisType === 'peak' ? fitOverlay : undefined}
               verticalLines={fpVerticalLines}
+              verticalLineLabel={fpVerticalLines ? 'FP共振' : undefined}
               xLabel={xAxisLabel}
               yLabel={yLabel}
               style={DEFAULT_PLOT_STYLE}
