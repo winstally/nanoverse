@@ -440,7 +440,9 @@ function AnalyzeTool() {
       return
     }
     setFitting(true)
-    requestAnimationFrame(() => {
+    // setTimeout (not requestAnimationFrame) so the compute still runs when the
+    // tab isn't painting — rAF can stall, leaving the button stuck on "フィット中…".
+    setTimeout(() => {
       try {
         const found = fitPeaks(firstVisible.x, firstVisible.y, {
           model,
@@ -464,7 +466,7 @@ function AnalyzeTool() {
       } finally {
         setFitting(false)
       }
-    })
+    }, 0)
   }, [firstVisible, model, fitSignature])
 
   // ── FP fit ──────────────────────────────────────────────────────────────
@@ -479,7 +481,7 @@ function AnalyzeTool() {
     }
     const traceId = firstVisibleRaw.id
     setFpFitting(true)
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       try {
         const opts: FpOptions = {
           ...DEFAULT_FP_OPTIONS,
@@ -500,7 +502,7 @@ function AnalyzeTool() {
       } finally {
         setFpFitting(false)
       }
-    })
+    }, 0)
   }, [firstVisibleRaw, fpAdvanced, fpL, fpMinWl, fpMaxWl])
 
   const getSvg = React.useCallback(() => svgRef.current, [])

@@ -419,6 +419,19 @@ function detectMainPeaks(
   }
   const ydRange = ydMax - ydMin
 
+  // Reject low-SNR fringes: only keep peaks sitting on meaningful signal (well
+  // above the baseline). Otherwise noise in the dim part of the spectrum gets
+  // detected and corrupts the linear fit (the comb stops aligning with the real
+  // fringes). fp_fit.py avoided this by hand-picking a clean wavelength window;
+  // this does it automatically from the signal's dynamic range.
+  let sMin = Infinity
+  let sMax = -Infinity
+  for (const v of ySmooth) {
+    if (v < sMin) sMin = v
+    if (v > sMax) sMax = v
+  }
+  const intensityFloor = sMin + 0.1 * (sMax - sMin)
+
   // Base threshold: if the user kept the factory prominence we pick an adaptive
   // value a few × the noise floor (fringe prominence ≈ 2× its amplitude, so this
   // separates fringes from noise across the whole envelope). A custom prominence
@@ -444,7 +457,9 @@ function detectMainPeaks(
   let usedDist = distanceSamples
   outer: for (const dist of distLadder) {
     for (const prom of promLadder) {
-      const found = findPeaks(yd, prom, dist)
+      const found = findPeaks(yd, prom, dist).filter(
+        (i) => ySmooth[i] >= intensityFloor,
+      )
       if (found.length >= 3) {
         peakIdx = found
         usedProm = prom
