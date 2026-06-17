@@ -32,6 +32,8 @@ export interface FpOptions {
   mMin: number
   /** Maximum mode start for the auto search. */
   mMax: number
+  /** Factor in A = aFactor · n_eff · L (default 2000 = 2 × µm→nm). */
+  aFactor: number
 }
 
 /**
@@ -86,6 +88,7 @@ export const DEFAULT_FP_OPTIONS: FpOptions = {
   refineNm: 3,
   mMin: 10,
   mMax: 80,
+  aFactor: 2000,
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -522,7 +525,12 @@ function detectMainPeaks(
  * Linear least-squares of m vs (1/lambda): m = A*(1/lambda) - delta, so the
  * slope is A and the intercept is -delta.
  */
-function fitForMStart(peaksNm: number[], L: number, mStart: number): FpFit {
+function fitForMStart(
+  peaksNm: number[],
+  L: number,
+  mStart: number,
+  aFactor: number,
+): FpFit {
   const n = peaksNm.length
   const m = peaksNm.map((_, i) => mStart - i)
   const invLambda = peaksNm.map((p) => 1.0 / p)
@@ -542,7 +550,7 @@ function fitForMStart(peaksNm: number[], L: number, mStart: number): FpFit {
   const A = denom !== 0 ? (n * sxy - sx * sy) / denom : 0
   const intercept = (sy - A * sx) / n
   const delta = -intercept
-  const nEff = A / (2000.0 * L)
+  const nEff = A / (aFactor * L)
 
   const calc = m.map((mi) => A / (mi + delta))
   const residual = peaksNm.map((p, i) => p - calc[i])
@@ -598,9 +606,11 @@ function chooseModeStart(
   L: number,
   mMin: number,
   mMax: number,
+  aFactor: number,
 ): FpFit {
   const fits: FpFit[] = []
-  for (let m = mMin; m <= mMax; m++) fits.push(fitForMStart(peaksNm, L, m))
+  for (let m = mMin; m <= mMax; m++)
+    fits.push(fitForMStart(peaksNm, L, m, aFactor))
 
   const better = (a: FpFit, b: FpFit): FpFit => {
     if (a.rmseNm !== b.rmseNm) return a.rmseNm < b.rmseNm ? a : b
@@ -641,8 +651,8 @@ export function fitFp(x: number[], y: number[], opts: FpOptions): FpResult {
   // 3/4. Fit for a given or auto-searched mStart.
   const fit =
     opts.mStart != null
-      ? fitForMStart(peaks, opts.L, opts.mStart)
-      : chooseModeStart(peaks, opts.L, opts.mMin, opts.mMax)
+      ? fitForMStart(peaks, opts.L, opts.mStart, opts.aFactor)
+      : chooseModeStart(peaks, opts.L, opts.mMin, opts.mMax, opts.aFactor)
 
   if (!Number.isFinite(fit.A) || !Number.isFinite(fit.nEff)) {
     return { ok: false, error: 'フィットに失敗しました' }

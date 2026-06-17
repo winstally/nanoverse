@@ -1,15 +1,24 @@
 import { BaselineMode, MeasurementType } from './types'
 
-export function nmToEv(nm: number): number {
-  return 1239.84 / nm
+/** hc in eV·nm — the photon energy constant (E = hc / λ). */
+export const DEFAULT_HC_EV_NM = 1239.84
+/** nm·cm⁻¹ unit factor for the Raman shift (10⁷). */
+export const DEFAULT_RAMAN_K = 1e7
+
+export function nmToEv(nm: number, hc: number = DEFAULT_HC_EV_NM): number {
+  return hc / nm
 }
 
-export function evToNm(ev: number): number {
-  return 1239.84 / ev
+export function evToNm(ev: number, hc: number = DEFAULT_HC_EV_NM): number {
+  return hc / ev
 }
 
-export function ramanShift(nmLaser: number, nm: number): number {
-  return 1e7 * (1 / nmLaser - 1 / nm)
+export function ramanShift(
+  nmLaser: number,
+  nm: number,
+  k: number = DEFAULT_RAMAN_K,
+): number {
+  return k * (1 / nmLaser - 1 / nm)
 }
 
 export function normalize(y: number[]): number[] {
@@ -84,12 +93,24 @@ export interface AxisInfo {
 export function transformX(
   x: number[],
   type: MeasurementType,
-  opts: { xMode?: 'nm' | 'eV'; laserNm?: number; xIsWavelength?: boolean },
+  opts: {
+    xMode?: 'nm' | 'eV'
+    laserNm?: number
+    xIsWavelength?: boolean
+    /** hc [eV·nm] for the nm→eV conversion. */
+    hc?: number
+    /** Raman unit factor [nm·cm⁻¹]. */
+    ramanK?: number
+  },
 ): AxisInfo {
   switch (type) {
     case 'PL': {
       if (opts.xMode === 'eV') {
-        return { x: x.map(nmToEv), xLabel: 'Energy', xUnit: 'eV' }
+        return {
+          x: x.map((nm) => nmToEv(nm, opts.hc)),
+          xLabel: 'Energy',
+          xUnit: 'eV',
+        }
       }
       return { x: x.slice(), xLabel: 'Wavelength', xUnit: 'nm' }
     }
@@ -97,7 +118,7 @@ export function transformX(
       if (opts.xIsWavelength !== false) {
         const laserNm = opts.laserNm ?? 532
         return {
-          x: x.map((nm) => ramanShift(laserNm, nm)),
+          x: x.map((nm) => ramanShift(laserNm, nm, opts.ramanK)),
           xLabel: 'Raman shift',
           xUnit: 'cm^-1',
         }

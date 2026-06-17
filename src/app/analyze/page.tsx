@@ -10,10 +10,17 @@ import { ExportButtons } from '@/modules/analyze/components/ExportButtons'
 import { PeakPanel } from '@/modules/analyze/components/PeakPanel'
 import { FpPanel } from '@/modules/analyze/components/FpPanel'
 import { DisplaySettings } from '@/modules/analyze/components/DisplaySettings'
+import { CalcCalibration } from '@/modules/analyze/components/CalcCalibration'
 import PlotView from '@/modules/analyze/plot/PlotView'
 import type { PlotOverlay } from '@/modules/analyze/plot/PlotView'
 import { DEFAULT_PLOT_STYLE, type PlotStyle } from '@/modules/analyze/plot/preset'
-import { transformX, normalize, baseline } from '@/modules/analyze/transform'
+import {
+  transformX,
+  normalize,
+  baseline,
+  DEFAULT_HC_EV_NM,
+  DEFAULT_RAMAN_K,
+} from '@/modules/analyze/transform'
 import { fitPeaks, fitCurve } from '@/modules/analyze/fit'
 import type { PeakModel, FitResult } from '@/modules/analyze/fit'
 import { fitFp, DEFAULT_FP_OPTIONS } from '@/modules/analyze/fp'
@@ -92,6 +99,13 @@ function AnalyzeTool() {
   const [fpL, setFpL] = React.useState<number>(DEFAULT_FP_OPTIONS.L)
   const [fpMinWl, setFpMinWl] = React.useState<number>(DEFAULT_FP_OPTIONS.minWl)
   const [fpMaxWl, setFpMaxWl] = React.useState<number>(DEFAULT_FP_OPTIONS.maxWl)
+
+  // Editable formula constants (calibration accordion).
+  const [hc, setHc] = React.useState<number>(DEFAULT_HC_EV_NM)
+  const [ramanK, setRamanK] = React.useState<number>(DEFAULT_RAMAN_K)
+  const [fpAFactor, setFpAFactor] = React.useState<number>(
+    DEFAULT_FP_OPTIONS.aFactor,
+  )
   const [fpAdvanced, setFpAdvanced] = React.useState<
     Pick<FpOptions, 'prominence' | 'distanceNm' | 'smoothWindow' | 'refineNm'>
   >({
@@ -155,6 +169,9 @@ function AnalyzeTool() {
       fpL,
       fpMinWl,
       fpMaxWl,
+      hcEvNm: hc,
+      ramanK,
+      fpAFactor,
     }
     return { id: sessionId, name: sessionName, traces, type, style }
   }, [
@@ -170,6 +187,9 @@ function AnalyzeTool() {
     fpL,
     fpMinWl,
     fpMaxWl,
+    hc,
+    ramanK,
+    fpAFactor,
   ])
 
   const persist = React.useCallback(
@@ -197,6 +217,9 @@ function AnalyzeTool() {
     setFpL(s.style?.fpL ?? DEFAULT_FP_OPTIONS.L)
     setFpMinWl(s.style?.fpMinWl ?? DEFAULT_FP_OPTIONS.minWl)
     setFpMaxWl(s.style?.fpMaxWl ?? DEFAULT_FP_OPTIONS.maxWl)
+    setHc(s.style?.hcEvNm ?? DEFAULT_HC_EV_NM)
+    setRamanK(s.style?.ramanK ?? DEFAULT_RAMAN_K)
+    setFpAFactor(s.style?.fpAFactor ?? DEFAULT_FP_OPTIONS.aFactor)
     setFit(null)
     setFpFit(null)
     setOverlay(false)
@@ -356,8 +379,8 @@ function AnalyzeTool() {
 
   // ── Derived transforms ────────────────────────────────────────────────────
   const transformOpts = React.useMemo(
-    () => ({ xMode, laserNm, xIsWavelength: true }),
-    [xMode, laserNm],
+    () => ({ xMode, laserNm, xIsWavelength: true, hc, ramanK }),
+    [xMode, laserNm, hc, ramanK],
   )
 
   const axisInfo = React.useMemo(
@@ -490,6 +513,7 @@ function AnalyzeTool() {
           L: fpL,
           minWl: fpMinWl,
           maxWl: fpMaxWl,
+          aFactor: fpAFactor,
         }
         const res = fitFp(firstVisibleRaw.x, firstVisibleRaw.y, opts)
         if (res.ok) {
@@ -504,7 +528,7 @@ function AnalyzeTool() {
         setFpFitting(false)
       }
     }, 0)
-  }, [firstVisibleRaw, fpAdvanced, fpL, fpMinWl, fpMaxWl])
+  }, [firstVisibleRaw, fpAdvanced, fpL, fpMinWl, fpMaxWl, fpAFactor])
 
   const getSvg = React.useCallback(() => svgRef.current, [])
 
@@ -643,6 +667,30 @@ function AnalyzeTool() {
                 onLegendReset={() => setLegend({ ...DEFAULT_LEGEND })}
                 baselineMode={baselineMode}
                 onBaselineMode={setBaselineMode}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        {/* 6 — Calibration: editable formula constants (collapsed) */}
+        <Accordion>
+          <AccordionItem value="calc" className="border-t border-border">
+            <AccordionTrigger>
+              <span className="eyebrow">キャリブレーション</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <CalcCalibration
+                hc={hc}
+                onHc={setHc}
+                ramanK={ramanK}
+                onRamanK={setRamanK}
+                fpAFactor={fpAFactor}
+                onFpAFactor={setFpAFactor}
+                onReset={() => {
+                  setHc(DEFAULT_HC_EV_NM)
+                  setRamanK(DEFAULT_RAMAN_K)
+                  setFpAFactor(DEFAULT_FP_OPTIONS.aFactor)
+                }}
               />
             </AccordionContent>
           </AccordionItem>

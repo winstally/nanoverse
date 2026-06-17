@@ -36,6 +36,11 @@ export interface PlotStyle {
   fpMinWl?: number
   /** FP peak-search maximum wavelength (nm). */
   fpMaxWl?: number
+
+  /** Editable formula constants (calibration). */
+  hcEvNm?: number // E = hc / λ
+  ramanK?: number // Δν = ramanK · (1/λ_L − 1/λ)
+  fpAFactor?: number // A = fpAFactor · n_eff · L
 }
 
 export const IGOR_PRESET: PlotStyle = {
@@ -58,4 +63,7 @@ export const DEFAULT_PLOT_STYLE: PlotStyle = {
   fpL: 6,
   fpMinWl: 1160,
   fpMaxWl: 1580,
+  hcEvNm: 1239.84,
+  ramanK: 1e7,
+  fpAFactor: 2000,
 }
