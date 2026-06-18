@@ -5,8 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* Surfaces — quiet neutral, only lightness shifts (same hue family) */
-  --color-bg: #f2f3f5;
+  /* Surfaces — quiet neutral, only lightness shifts (same hue family).
+     The frame (--color-bg) is white; the work-surface card reads as distinct via
+     its border + shadow rather than a background-colour contrast. */
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
   --color-surface-2: #fafbfc;
   --color-inset: #f5f6f8;
@@ -15,8 +17,9 @@
   /* Text — four deliberate levels */
   --color-ink: #1b1e23;
   --color-ink-2: #5b6470;
-  --color-ink-3: #8a929c;
-  --color-ink-muted: #b3b9c1;
+  /* Section labels / eyebrows. Darkened for legibility on the gray frame. */
+  --color-ink-3: #626a77;
+  --color-ink-muted: #9aa1ab;
 
   /* Borders — progression, low-opacity so they whisper */
   --color-rule: rgba(20, 23, 28, 0.08);
@@ -165,7 +168,7 @@ body {
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.46 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);

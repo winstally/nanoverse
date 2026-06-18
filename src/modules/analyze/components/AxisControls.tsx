@@ -5,8 +5,15 @@ import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { NumberField } from '@/components/app/NumberField'
-import type { AxisMode, MeasurementType } from '../types'
+import type { AxisMode, BaselineMode, MeasurementType } from '../types'
 
 export interface AxisControlsProps {
   type: MeasurementType
@@ -17,8 +24,18 @@ export interface AxisControlsProps {
   onLaserNm: (nm: number) => void
   normalize: boolean
   onNormalize: (v: boolean) => void
+  legendVisible: boolean
+  onLegendVisible: (v: boolean) => void
+  baselineMode: BaselineMode
+  onBaselineMode: (m: BaselineMode) => void
   className?: string
 }
+
+const BASELINE_OPTIONS: { value: BaselineMode; label: string }[] = [
+  { value: 'none', label: 'なし' },
+  { value: 'min', label: '最小値を引く' },
+  { value: 'endpoints', label: '直線(両端)' },
+]
 
 /**
  * Frequently-changed measurement & axis controls, always visible in the left
@@ -34,6 +51,10 @@ export function AxisControls({
   onLaserNm,
   normalize,
   onNormalize,
+  legendVisible,
+  onLegendVisible,
+  baselineMode,
+  onBaselineMode,
   className,
 }: AxisControlsProps) {
   return (
@@ -104,7 +125,7 @@ export function AxisControls({
 
       <div className="flex items-center justify-between">
         <Label htmlFor="normalize-toggle" className="text-muted-foreground">
-          正規化 <span className="text-muted-foreground/70">(最大=1)</span>
+          正規化
         </Label>
         <Switch
           id="normalize-toggle"
@@ -112,6 +133,40 @@ export function AxisControls({
           onCheckedChange={onNormalize}
           aria-label="正規化"
         />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Label htmlFor="legend-toggle" className="text-muted-foreground">
+          凡例
+        </Label>
+        <Switch
+          id="legend-toggle"
+          checked={legendVisible}
+          onCheckedChange={onLegendVisible}
+          aria-label="凡例を表示"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-muted-foreground">ベースライン補正</Label>
+        <Select
+          items={BASELINE_OPTIONS}
+          value={baselineMode}
+          onValueChange={(v) => {
+            if (v) onBaselineMode(v as BaselineMode)
+          }}
+        >
+          <SelectTrigger className="w-full" aria-label="ベースライン補正">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {BASELINE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   )

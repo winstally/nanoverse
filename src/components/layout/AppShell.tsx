@@ -2,8 +2,13 @@
 
 import * as React from 'react'
 import { PrimaryRail } from './PrimaryRail'
-import { MainCard } from './MainCard'
 
+/**
+ * App frame: the Primary Rail plus the page region. The page region is left to
+ * `ToolLayout`, which renders the control panel as a sidebar (blended into this
+ * frame background) and wraps only the work surface in a white card — matching
+ * photoverse's "flush" layout where the sidebar sits outside the card.
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -16,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <PrimaryRail />
-      <MainCard>{children}</MainCard>
+      {children}
     </div>
   )
 }

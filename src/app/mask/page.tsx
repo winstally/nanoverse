@@ -21,6 +21,7 @@ import {
   ToolDefaults,
 } from '@/modules/mask/tool-defaults'
 import { CalibrationPanel } from '@/modules/mask/components/CalibrationPanel'
+import { PolarityToggle } from '@/modules/mask/components/PolarityToggle'
 import { GeneratorPanel } from '@/modules/mask/components/GeneratorPanel'
 import { Button } from '@/components/ui/button'
 import { SectionLabel } from '@/components/app/SectionLabel'
@@ -47,6 +48,10 @@ import { logEvent } from '@/lib/log'
 import { toast } from 'sonner'
 
 const initialCal = defaultCalibration()
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi)
+}
 
 function MaskTool() {
   const [cal, setCal] = useState<Calibration>(initialCal)
@@ -156,6 +161,35 @@ function MaskTool() {
     history.set((d) => ({ ...d, shapes: [...d.shapes, copy] }))
     setSelectedId(copy.id)
   }, [doc.shapes, selectedId, history])
+
+  // --- Clipboard (copy / cut / paste) --------------------------------------
+  // In-app clipboard holding a detached copy of a shape (no id).
+  const clipboardRef = useRef<Shape | null>(null)
+
+  const copySelected = useCallback((): boolean => {
+    if (!selectedId) return false
+    const src = doc.shapes.find((s) => s.id === selectedId)
+    if (!src) return false
+    clipboardRef.current = { ...src }
+    return true
+  }, [doc.shapes, selectedId])
+
+  const pasteClipboard = useCallback(() => {
+    const src = clipboardRef.current
+    if (!src) return
+    // Offset the paste and keep it inside the field.
+    const nx = clamp(src.x + 8, 0, doc.widthUm)
+    const ny = clamp(src.y + 8, 0, doc.heightUm)
+    const copy = { ...src, id: newId(`${src.kind}-`), x: nx, y: ny } as Shape
+    history.set((d) => ({ ...d, shapes: [...d.shapes, copy] }))
+    setSelectedId(copy.id)
+    // Cascade subsequent pastes from the new position.
+    clipboardRef.current = { ...src, x: nx, y: ny }
+  }, [doc.widthUm, doc.heightUm, history])
+
+  const cutSelected = useCallback(() => {
+    if (copySelected() && selectedId) deleteShape(selectedId)
+  }, [copySelected, deleteShape, selectedId])
 
   // --- Project actions -----------------------------------------------------
   // Renaming on every keystroke shouldn't flood undo, so it's not recorded.
@@ -303,6 +337,38 @@ function MaskTool() {
         return
       }
 
+      // Clipboard (Cmd/Ctrl + C/X/V/D). Only consume the event when we actually
+      // act, so plain text copy still works when no shape is involved.
+      if (mod && !e.shiftKey && !e.altKey) {
+        if (typing) return
+        switch (e.key.toLowerCase()) {
+          case 'c':
+            if (selectedId) {
+              e.preventDefault()
+              copySelected()
+            }
+            return
+          case 'x':
+            if (selectedId) {
+              e.preventDefault()
+              cutSelected()
+            }
+            return
+          case 'v':
+            if (clipboardRef.current) {
+              e.preventDefault()
+              pasteClipboard()
+            }
+            return
+          case 'd':
+            if (selectedId) {
+              e.preventDefault()
+              duplicateSelected()
+            }
+            return
+        }
+      }
+
       // Single-key commands (ignored while typing or with modifiers held).
       if (typing || mod || e.altKey) return
       switch (e.key.toLowerCase()) {
@@ -340,7 +406,14 @@ function MaskTool() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [history, selectedId, duplicateSelected])
+  }, [
+    history,
+    selectedId,
+    duplicateSelected,
+    copySelected,
+    cutSelected,
+    pasteClipboard,
+  ])
 
   const isGenerator = tool === 'lineSpace' || tool === 'grid'
 
@@ -364,6 +437,10 @@ function MaskTool() {
           <div className="flex flex-col gap-2">
             <SectionLabel>ツール</SectionLabel>
             <Toolbar tool={tool} onToolChange={setTool} />
+            <PolarityToggle
+              polarity={doc.polarity}
+              onPolarityChange={setPolarity}
+            />
           </div>
 
           {/* 3. Context section — generator form / shape properties / hint */}
@@ -390,18 +467,13 @@ function MaskTool() {
           </div>
 
           {/* 4. Calibration — collapsed by default */}
-          <Accordion className="border-t border-border pt-1">
-            <AccordionItem value="cal" className="border-b-0">
-              <AccordionTrigger className="eyebrow !text-muted-foreground hover:no-underline">
+          <Accordion>
+            <AccordionItem value="cal" className="border-t border-border">
+              <AccordionTrigger variant="section">
                 キャリブレーション
               </AccordionTrigger>
               <AccordionContent>
-                <CalibrationPanel
-                  cal={cal}
-                  onCalChange={setCal}
-                  polarity={doc.polarity}
-                  onPolarityChange={setPolarity}
-                />
+                <CalibrationPanel cal={cal} onCalChange={setCal} />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -413,18 +485,13 @@ function MaskTool() {
           <Download />
           BMP出力
         </Button>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          図形 <span className="tnum">{doc.shapes.length}</span> 個 /{' '}
-          <span className="tnum">{Math.round(doc.widthUm)}</span>×
-          <span className="tnum">{Math.round(doc.heightUm)}</span> µm
-        </p>
       </div>
     </div>
   )
 
   return (
     <ToolLayout panel={panel} panelTitle="マスク設定" panelWidth={300}>
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30 p-4">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4">
         <MaskCanvas
           doc={doc}
           cal={cal}

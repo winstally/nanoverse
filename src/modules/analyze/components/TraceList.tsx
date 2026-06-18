@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Eye, EyeOff, Trash2, LineChart } from 'lucide-react'
+import { Eye, EyeOff, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -147,21 +147,7 @@ export function TraceList({
   onLineWidth,
   className,
 }: TraceListProps) {
-  if (traces.length === 0) {
-    return (
-      <div
-        className={cn(
-          'flex flex-col items-center justify-center gap-2 py-8 text-center',
-          className,
-        )}
-      >
-        <LineChart size={22} className="text-muted-foreground" aria-hidden />
-        <p className="text-xs text-muted-foreground">
-          まだスペクトルがありません
-        </p>
-      </div>
-    )
-  }
+  if (traces.length === 0) return null
 
   return (
     <ul className={cn('flex flex-col gap-0.5', className)}>

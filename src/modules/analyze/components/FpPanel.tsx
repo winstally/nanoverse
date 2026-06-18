@@ -121,6 +121,12 @@ export function FpPanel({
     toast.success('CSV を書き出しました')
   }, [fit])
 
+  // Per-adjacent-pair group index — a consistency check on the continuous-mode
+  // assumption (all values ≈ n_g,FP if no peak is missing / spurious).
+  const pairNg = fit ? fit.pairNg.filter((v) => Number.isFinite(v)) : []
+  const ngMin = pairNg.length ? Math.min(...pairNg) : NaN
+  const ngMax = pairNg.length ? Math.max(...pairNg) : NaN
+
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <NumberField
@@ -138,7 +144,7 @@ export function FpPanel({
         <Label className="text-muted-foreground">探索範囲</Label>
         <div className="grid grid-cols-2 gap-2">
           <NumberField
-            label="min"
+            label="最小"
             unit="nm"
             value={minWl}
             step={1}
@@ -147,7 +153,7 @@ export function FpPanel({
             }}
           />
           <NumberField
-            label="max"
+            label="最大"
             unit="nm"
             value={maxWl}
             step={1}
@@ -161,13 +167,11 @@ export function FpPanel({
       {/* Advanced detection params (collapsed by default). */}
       <Accordion>
         <AccordionItem value="fp-advanced" className="border-t border-border">
-          <AccordionTrigger>
-            <span className="eyebrow">詳細パラメータ</span>
-          </AccordionTrigger>
+          <AccordionTrigger variant="section">詳細パラメータ</AccordionTrigger>
           <AccordionContent>
             <div className="flex flex-col gap-3 pt-1">
               <NumberField
-                label="prominence"
+                label="突出度"
                 value={advanced.prominence}
                 min={0}
                 step={10}
@@ -177,7 +181,7 @@ export function FpPanel({
                 }}
               />
               <NumberField
-                label="distance"
+                label="間隔"
                 unit="nm"
                 value={advanced.distanceNm}
                 min={0}
@@ -188,7 +192,7 @@ export function FpPanel({
                 }}
               />
               <NumberField
-                label="smooth window"
+                label="平滑化窓"
                 value={advanced.smoothWindow}
                 min={3}
                 step={2}
@@ -198,7 +202,7 @@ export function FpPanel({
                 }}
               />
               <NumberField
-                label="refine"
+                label="精密化"
                 unit="nm"
                 value={advanced.refineNm}
                 min={0}
@@ -229,7 +233,7 @@ export function FpPanel({
         <div className="flex flex-col gap-2">
           {/* Summary block */}
           <div className="tnum flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-2.5 text-xs">
-            <Metric label="n_eff" value={fmt(fit.nEff)} />
+            <Metric label="n_g,FP" value={fmt(fit.ngFp)} />
             <Metric label="δ" value={fmt(fit.delta)} />
             <Metric label="A" value={fmt(fit.A, 3)} unit=" nm" />
             <Metric label="RMSE" value={fmt(fit.rmseNm, 3)} unit=" nm" />
@@ -240,7 +244,7 @@ export function FpPanel({
             <Metric label="m_start" value={String(fit.mStart)} />
             {fit.effectiveProminence != null && (
               <Metric
-                label="検出prominence"
+                label="検出突出度"
                 value={fmt(
                   fit.effectiveProminence,
                   fit.effectiveProminence >= 100 ? 0 : 2,
@@ -248,6 +252,31 @@ export function FpPanel({
               />
             )}
           </div>
+
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            n_g,FP は FP 由来の群屈折率相当（主に FSR で決定）で、位相屈折率 n_eff
+            とは限りません。m_start は相対番号で絶対モード番号ではありません（+1 で δ
+            が −1 されるだけ）。
+          </p>
+
+          {/* Per-pair group index — consistency check for the continuous-mode model. */}
+          {pairNg.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-2.5 text-xs">
+              <Metric
+                label="隣接ピア間 n_g"
+                value={`${fmt(ngMin, 3)}–${fmt(ngMax, 3)}`}
+              />
+              <div className="tnum flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                {pairNg.map((v, i) => (
+                  <span key={i}>{fmt(v, 3)}</span>
+                ))}
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                ※ 連続モード(Δm=1)を仮定し各隣接ピーク対から算出。値が揃わない場合は
+                ピーク欠落/混入の疑いがあります。
+              </p>
+            </div>
+          )}
 
           {/* Per-mode table */}
           <div className="overflow-hidden rounded-md border border-border">

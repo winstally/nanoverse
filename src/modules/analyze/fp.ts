@@ -5,11 +5,22 @@
  *
  * Model:
  *     lambda_m = A / (m + delta)
- *     A        = 2000 * n_eff * L_um
+ *     A        = FP_A_FACTOR * n_g,FP * L_um
+ *
+ * The index this recovers is the FP-derived (group-index-like) value n_g,FP — it
+ * is fixed mainly by the fringe spacing (FSR), NOT the phase index n_eff. Only
+ * when dispersion is negligible does n_g,FP ≈ n_eff.
+ *
+ * FP_A_FACTOR = 2000 = 2 (round trip) × 1000 (µm→nm). It is a unit/geometry
+ * constant, NOT a calibration knob — changing it would only rescale the reported
+ * index without touching peak positions or RMSE, so it is fixed here.
  *
  * FP works on WAVELENGTH (nm). Always feed this the trace's RAW x in nm — never
  * the eV / Raman-shift / 2θ-transformed abscissa.
  */
+
+/** A = FP_A_FACTOR · n_g,FP · L. 2 = round trip, 1000 = µm→nm. Fixed, not editable. */
+export const FP_A_FACTOR = 2000
 
 export interface FpOptions {
   /** Cavity length in µm. */
@@ -32,8 +43,6 @@ export interface FpOptions {
   mMin: number
   /** Maximum mode start for the auto search. */
   mMax: number
-  /** Factor in A = aFactor · n_eff · L (default 2000 = 2 × µm→nm). */
-  aFactor: number
 }
 
 /**
@@ -59,10 +68,19 @@ export interface FpFit {
   calcNm: number[]
   /** Observed − calculated residual for each peak (nm). */
   residualNm: number[]
-  /** Fitted A = 2000 * n_eff * L (nm). */
+  /** Fitted A = FP_A_FACTOR * n_g,FP * L (nm). */
   A: number
-  /** Effective refractive index. */
-  nEff: number
+  /**
+   * FP-derived index n_g,FP = A / (FP_A_FACTOR · L). Determined mainly by the
+   * fringe spacing, so it is a group-index-like value, NOT the phase n_eff.
+   */
+  ngFp: number
+  /**
+   * Group index from each ADJACENT detected-peak pair (length peaksNm−1), under
+   * the continuous-mode assumption (Δm = 1). If these are not all ≈ngFp, a peak
+   * is likely missing or spurious and the mode numbering is unreliable.
+   */
+  pairNg: number[]
   /** Fitted phase offset δ. */
   delta: number
   /** Root-mean-square of the residuals (nm). */
@@ -88,7 +106,6 @@ export const DEFAULT_FP_OPTIONS: FpOptions = {
   refineNm: 3,
   mMin: 10,
   mMax: 80,
-  aFactor: 2000,
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -525,12 +542,7 @@ function detectMainPeaks(
  * Linear least-squares of m vs (1/lambda): m = A*(1/lambda) - delta, so the
  * slope is A and the intercept is -delta.
  */
-function fitForMStart(
-  peaksNm: number[],
-  L: number,
-  mStart: number,
-  aFactor: number,
-): FpFit {
+function fitForMStart(peaksNm: number[], L: number, mStart: number): FpFit {
   const n = peaksNm.length
   const m = peaksNm.map((_, i) => mStart - i)
   const invLambda = peaksNm.map((p) => 1.0 / p)
@@ -550,13 +562,25 @@ function fitForMStart(
   const A = denom !== 0 ? (n * sxy - sx * sy) / denom : 0
   const intercept = (sy - A * sx) / n
   const delta = -intercept
-  const nEff = A / (aFactor * L)
+  const ngFp = A / (FP_A_FACTOR * L)
 
   const calc = m.map((mi) => A / (mi + delta))
   const residual = peaksNm.map((p, i) => p - calc[i])
   let sumSq = 0
   for (const r of residual) sumSq += r * r
   const rmse = Math.sqrt(sumSq / n)
+
+  // Group index from each adjacent detected pair (Δm from the assigned modes,
+  // = 1 under the continuous-mode assumption). Spread across these reveals a
+  // missing / spurious peak.
+  const pairNg: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    const la = peaksNm[i]
+    const lb = peaksNm[i + 1]
+    const dm = m[i] - m[i + 1]
+    const dl = lb - la
+    pairNg.push(dl > 0 ? (dm * la * lb) / (FP_A_FACTOR * L * dl) : NaN)
+  }
 
   return {
     modes: [],
@@ -565,7 +589,8 @@ function fitForMStart(
     calcNm: calc,
     residualNm: residual,
     A,
-    nEff,
+    ngFp,
+    pairNg,
     delta,
     rmseNm: rmse,
     mStart: Math.trunc(mStart),
@@ -606,11 +631,9 @@ function chooseModeStart(
   L: number,
   mMin: number,
   mMax: number,
-  aFactor: number,
 ): FpFit {
   const fits: FpFit[] = []
-  for (let m = mMin; m <= mMax; m++)
-    fits.push(fitForMStart(peaksNm, L, m, aFactor))
+  for (let m = mMin; m <= mMax; m++) fits.push(fitForMStart(peaksNm, L, m))
 
   const better = (a: FpFit, b: FpFit): FpFit => {
     if (a.rmseNm !== b.rmseNm) return a.rmseNm < b.rmseNm ? a : b
@@ -618,7 +641,7 @@ function chooseModeStart(
   }
 
   const valid = fits.filter(
-    (f) => f.delta >= -0.5 && f.delta < 0.5 && f.nEff >= 1.0 && f.nEff <= 6.0,
+    (f) => f.delta >= -0.5 && f.delta < 0.5 && f.ngFp >= 1.0 && f.ngFp <= 6.0,
   )
   const pool = valid.length > 0 ? valid : fits
   return pool.reduce((best, f) => better(best, f))
@@ -651,10 +674,10 @@ export function fitFp(x: number[], y: number[], opts: FpOptions): FpResult {
   // 3/4. Fit for a given or auto-searched mStart.
   const fit =
     opts.mStart != null
-      ? fitForMStart(peaks, opts.L, opts.mStart, opts.aFactor)
-      : chooseModeStart(peaks, opts.L, opts.mMin, opts.mMax, opts.aFactor)
+      ? fitForMStart(peaks, opts.L, opts.mStart)
+      : chooseModeStart(peaks, opts.L, opts.mMin, opts.mMax)
 
-  if (!Number.isFinite(fit.A) || !Number.isFinite(fit.nEff)) {
+  if (!Number.isFinite(fit.A) || !Number.isFinite(fit.ngFp)) {
     return { ok: false, error: 'フィットに失敗しました' }
   }
 

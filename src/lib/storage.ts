@@ -10,13 +10,13 @@ export interface AnalyzeSession {
   traces: Trace[]
   type: MeasurementType
   style: PlotStyle
-  /** Epoch ms of the last save. Written by the caller, optional on legacy records. */
+  /** Epoch ms of the last save, written by the caller. */
   updatedAt?: number
 }
 
 /** A MaskDocument augmented with persistence metadata. */
 export type StoredMaskDocument = MaskDocument & {
-  /** Epoch ms of the last save. Written by the caller, optional on legacy records. */
+  /** Epoch ms of the last save, written by the caller. */
   updatedAt?: number
 }
 

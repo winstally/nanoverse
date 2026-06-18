@@ -14,14 +14,6 @@ export type MeasurementType = 'PL' | 'Raman' | 'XRD'
 /** PL-only horizontal axis mode. */
 export type AxisMode = 'nm' | 'eV'
 
-/** Where the legend box sits inside the plot frame (or hidden). */
-export type LegendPosition =
-  | 'top-right'
-  | 'top-left'
-  | 'bottom-right'
-  | 'bottom-left'
-  | 'none'
-
 /** Baseline correction applied to Y before normalize / fit / plot. */
 export type BaselineMode = 'none' | 'min' | 'endpoints'
 

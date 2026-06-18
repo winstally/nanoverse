@@ -1,4 +1,4 @@
-import type { AxisMode, BaselineMode, LegendLayout, LegendPosition } from '../types'
+import type { AxisMode, BaselineMode, LegendLayout } from '../types'
 import { DEFAULT_LEGEND } from '../types'
 
 /**
@@ -17,8 +17,6 @@ export interface PlotStyle {
   fontFamily: string
   fontSize: number
 
-  /** Where the legend sits, or hidden. (Legacy — superseded by `legend`.) */
-  legendPosition?: LegendPosition
   /** Free-placed legend (position/size/visibility). */
   legend?: LegendLayout
   /** PL horizontal axis mode (nm / eV). */
@@ -40,7 +38,6 @@ export interface PlotStyle {
   /** Editable formula constants (calibration). */
   hcEvNm?: number // E = hc / λ
   ramanK?: number // Δν = ramanK · (1/λ_L − 1/λ)
-  fpAFactor?: number // A = fpAFactor · n_eff · L
 }
 
 export const IGOR_PRESET: PlotStyle = {
@@ -54,7 +51,6 @@ export const IGOR_PRESET: PlotStyle = {
 /** Default session-level settings layered onto the Igor publication preset. */
 export const DEFAULT_PLOT_STYLE: PlotStyle = {
   ...IGOR_PRESET,
-  legendPosition: 'top-right',
   legend: { ...DEFAULT_LEGEND },
   axisMode: 'nm',
   laserNm: 532,
@@ -65,5 +61,4 @@ export const DEFAULT_PLOT_STYLE: PlotStyle = {
   fpMaxWl: 1580,
   hcEvNm: 1239.84,
   ramanK: 1e7,
-  fpAFactor: 2000,
 }

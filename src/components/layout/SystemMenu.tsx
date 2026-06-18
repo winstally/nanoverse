@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import {
   APP_NAME,
+  APP_DESCRIPTION,
   APP_VERSION,
   GITHUB_URL,
   LICENSE_NAME,
@@ -36,7 +37,6 @@ import { getLogs, logEvent, subscribe, clearLogs, type LogEntry } from '@/lib/lo
 import { cn } from '@/lib/utils'
 import {
   Info,
-  ScrollText,
   Download,
   Upload,
   Trash2,
@@ -73,8 +73,7 @@ export interface SystemMenuProps {
 }
 
 export function SystemMenu({ className }: SystemMenuProps) {
-  const [aboutOpen, setAboutOpen] = React.useState(false)
-  const [logOpen, setLogOpen] = React.useState(false)
+  const [infoOpen, setInfoOpen] = React.useState(false)
   const [confirmClearOpen, setConfirmClearOpen] = React.useState(false)
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -90,9 +89,9 @@ export function SystemMenu({ className }: SystemMenuProps) {
     getServerLogs
   )
 
-  // Refresh storage estimate when the About dialog opens.
+  // Refresh storage estimate when the info dialog opens.
   React.useEffect(() => {
-    if (!aboutOpen) return
+    if (!infoOpen) return
     let alive = true
     storageEstimate().then((s) => {
       if (alive) setStorage(s)
@@ -100,7 +99,7 @@ export function SystemMenu({ className }: SystemMenuProps) {
     return () => {
       alive = false
     }
-  }, [aboutOpen])
+  }, [infoOpen])
 
   function handleExport() {
     exportAllData()
@@ -180,13 +179,9 @@ export function SystemMenu({ className }: SystemMenuProps) {
             </DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setAboutOpen(true)}>
+          <DropdownMenuItem onClick={() => setInfoOpen(true)}>
             <Info />
-            バージョン情報
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setLogOpen(true)}>
-            <ScrollText />
-            ログ
+            情報
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleExport}>
@@ -225,16 +220,22 @@ export function SystemMenu({ className }: SystemMenuProps) {
         onChange={handleImport}
       />
 
-      {/* About dialog */}
-      <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
-        <DialogContent>
+      {/* Info dialog — description, version metadata, and activity log */}
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{APP_NAME}</DialogTitle>
-            <DialogDescription>研究用ツール集</DialogDescription>
+            <DialogTitle>
+              {APP_NAME}{' '}
+              <span className="tnum align-middle text-sm font-normal text-muted-foreground">
+                v{APP_VERSION}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              {APP_DESCRIPTION}
+            </DialogDescription>
           </DialogHeader>
+
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">バージョン</dt>
-            <dd className="tnum">{APP_VERSION}</dd>
             <dt className="text-muted-foreground">ライセンス</dt>
             <dd>{LICENSE_NAME}</dd>
             <dt className="text-muted-foreground">ストレージ使用量</dt>
@@ -246,37 +247,32 @@ export function SystemMenu({ className }: SystemMenuProps) {
                 : '—'}
             </dd>
           </dl>
-          <DialogFooter showCloseButton />
-        </DialogContent>
-      </Dialog>
 
-      {/* Log dialog */}
-      <Dialog open={logOpen} onOpenChange={setLogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>ログ</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-muted/40">
-            {logs.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">
-                ログはありません
-              </p>
-            ) : (
-              <ul className="divide-y divide-border text-sm">
-                {logs.map((entry, i) => (
-                  <li
-                    key={`${entry.ts}-${i}`}
-                    className="flex gap-3 px-3 py-1.5"
-                  >
-                    <span className="tnum shrink-0 text-muted-foreground">
-                      {formatTime(entry.ts)}
-                    </span>
-                    <span className="min-w-0 flex-1">{entry.msg}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow !text-muted-foreground">ログ</span>
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-muted/40">
+              {logs.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  ログはありません
+                </p>
+              ) : (
+                <ul className="divide-y divide-border text-sm">
+                  {logs.map((entry, i) => (
+                    <li
+                      key={`${entry.ts}-${i}`}
+                      className="flex gap-3 px-3 py-1.5"
+                    >
+                      <span className="tnum shrink-0 text-muted-foreground">
+                        {formatTime(entry.ts)}
+                      </span>
+                      <span className="min-w-0 flex-1">{entry.msg}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
+
           <DialogFooter showCloseButton />
         </DialogContent>
       </Dialog>

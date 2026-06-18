@@ -9,7 +9,6 @@ import { AxisControls } from '@/modules/analyze/components/AxisControls'
 import { ExportButtons } from '@/modules/analyze/components/ExportButtons'
 import { PeakPanel } from '@/modules/analyze/components/PeakPanel'
 import { FpPanel } from '@/modules/analyze/components/FpPanel'
-import { DisplaySettings } from '@/modules/analyze/components/DisplaySettings'
 import { CalcCalibration } from '@/modules/analyze/components/CalcCalibration'
 import PlotView from '@/modules/analyze/plot/PlotView'
 import type { PlotOverlay } from '@/modules/analyze/plot/PlotView'
@@ -103,9 +102,6 @@ function AnalyzeTool() {
   // Editable formula constants (calibration accordion).
   const [hc, setHc] = React.useState<number>(DEFAULT_HC_EV_NM)
   const [ramanK, setRamanK] = React.useState<number>(DEFAULT_RAMAN_K)
-  const [fpAFactor, setFpAFactor] = React.useState<number>(
-    DEFAULT_FP_OPTIONS.aFactor,
-  )
   const [fpAdvanced, setFpAdvanced] = React.useState<
     Pick<FpOptions, 'prominence' | 'distanceNm' | 'smoothWindow' | 'refineNm'>
   >({
@@ -171,7 +167,6 @@ function AnalyzeTool() {
       fpMaxWl,
       hcEvNm: hc,
       ramanK,
-      fpAFactor,
     }
     return { id: sessionId, name: sessionName, traces, type, style }
   }, [
@@ -189,7 +184,6 @@ function AnalyzeTool() {
     fpMaxWl,
     hc,
     ramanK,
-    fpAFactor,
   ])
 
   const persist = React.useCallback(
@@ -219,7 +213,6 @@ function AnalyzeTool() {
     setFpMaxWl(s.style?.fpMaxWl ?? DEFAULT_FP_OPTIONS.maxWl)
     setHc(s.style?.hcEvNm ?? DEFAULT_HC_EV_NM)
     setRamanK(s.style?.ramanK ?? DEFAULT_RAMAN_K)
-    setFpAFactor(s.style?.fpAFactor ?? DEFAULT_FP_OPTIONS.aFactor)
     setFit(null)
     setFpFit(null)
     setOverlay(false)
@@ -531,12 +524,11 @@ function AnalyzeTool() {
           L: fpL,
           minWl: fpMinWl,
           maxWl: fpMaxWl,
-          aFactor: fpAFactor,
         }
         const res = fitFp(rawX, rawY, opts)
         if (res.ok) {
           setFpFit({ traceId, fit: res.fit, message: null })
-          logEvent(`FPフィット: n_eff=${res.fit.nEff.toFixed(3)}`)
+          logEvent(`FPフィット: n_g,FP=${res.fit.ngFp.toFixed(3)}`)
         } else {
           setFpFit({ traceId, fit: null, message: res.error })
         }
@@ -546,7 +538,7 @@ function AnalyzeTool() {
         setFpFitting(false)
       }
     }, 0)
-  }, [fitTarget, fpAdvanced, fpL, fpMinWl, fpMaxWl, fpAFactor])
+  }, [fitTarget, fpAdvanced, fpL, fpMinWl, fpMaxWl])
 
   const getSvg = React.useCallback(() => svgRef.current, [])
 
@@ -606,86 +598,73 @@ function AnalyzeTool() {
             onLaserNm={setLaserNm}
             normalize={doNormalize}
             onNormalize={setDoNormalize}
+            legendVisible={legend.visible}
+            onLegendVisible={(v) => setLegend((l) => ({ ...l, visible: v }))}
+            baselineMode={baselineMode}
+            onBaselineMode={setBaselineMode}
           />
         </section>
 
-        <Separator />
-
-        {/* 4 — Peak analysis */}
-        <section className="flex flex-col gap-2">
-          <SectionLabel>ピーク解析</SectionLabel>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground">解析タイプ</Label>
-            <ToggleGroup
-              variant="outline"
-              size="sm"
-              spacing={0}
-              value={[analysisType]}
-              onValueChange={(v) => {
-                const next = v[0] as 'peak' | 'fp' | undefined
-                if (next) setAnalysisType(next)
-              }}
-              aria-label="解析タイプ"
-              className="w-full"
-            >
-              <ToggleGroupItem value="peak" className="flex-1">
-                ピーク
-              </ToggleGroupItem>
-              <ToggleGroupItem value="fp" className="flex-1">
-                FP共振
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
-          {analysisType === 'peak' ? (
-            <PeakPanel
-              model={model}
-              onModel={setModel}
-              overlay={overlay}
-              onOverlay={setOverlay}
-              results={results}
-              canFit={canFit}
-              fitting={fitting}
-              fitMessage={fitMessage}
-              onFit={handleFit}
-              xUnit={axisInfo.xUnit}
-            />
-          ) : (
-            <FpPanel
-              L={fpL}
-              onL={setFpL}
-              minWl={fpMinWl}
-              onMinWl={setFpMinWl}
-              maxWl={fpMaxWl}
-              onMaxWl={setFpMaxWl}
-              advanced={fpAdvanced}
-              onAdvanced={setFpAdvanced}
-              fit={fpResultFit}
-              canFit={canFitFp}
-              fitting={fpFitting}
-              fitMessage={fpMessage}
-              onFit={handleFpFit}
-            />
-          )}
-        </section>
-
-        {/* 5 — Display settings (collapsed) */}
+        {/* 4 — Peak analysis (collapsed) */}
         <Accordion>
-          <AccordionItem value="display" className="border-t border-border">
-            <AccordionTrigger>
-              <span className="eyebrow">表示設定</span>
-            </AccordionTrigger>
+          <AccordionItem value="peak" className="border-t border-border">
+            <AccordionTrigger variant="section">ピーク解析</AccordionTrigger>
             <AccordionContent>
-              <DisplaySettings
-                legendVisible={legend.visible}
-                onLegendVisible={(v) =>
-                  setLegend((l) => ({ ...l, visible: v }))
-                }
-                onLegendReset={() => setLegend({ ...DEFAULT_LEGEND })}
-                baselineMode={baselineMode}
-                onBaselineMode={setBaselineMode}
-              />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-muted-foreground">解析タイプ</Label>
+                  <ToggleGroup
+                    variant="outline"
+                    size="sm"
+                    spacing={0}
+                    value={[analysisType]}
+                    onValueChange={(v) => {
+                      const next = v[0] as 'peak' | 'fp' | undefined
+                      if (next) setAnalysisType(next)
+                    }}
+                    aria-label="解析タイプ"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="peak" className="flex-1">
+                      ピーク
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="fp" className="flex-1">
+                      FP共振
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+
+                {analysisType === 'peak' ? (
+                  <PeakPanel
+                    model={model}
+                    onModel={setModel}
+                    overlay={overlay}
+                    onOverlay={setOverlay}
+                    results={results}
+                    canFit={canFit}
+                    fitting={fitting}
+                    fitMessage={fitMessage}
+                    onFit={handleFit}
+                    xUnit={axisInfo.xUnit}
+                  />
+                ) : (
+                  <FpPanel
+                    L={fpL}
+                    onL={setFpL}
+                    minWl={fpMinWl}
+                    onMinWl={setFpMinWl}
+                    maxWl={fpMaxWl}
+                    onMaxWl={setFpMaxWl}
+                    advanced={fpAdvanced}
+                    onAdvanced={setFpAdvanced}
+                    fit={fpResultFit}
+                    canFit={canFitFp}
+                    fitting={fpFitting}
+                    fitMessage={fpMessage}
+                    onFit={handleFpFit}
+                  />
+                )}
+              </div>
             </AccordionContent>
           </AccordionItem>
         </Accordion>
@@ -693,21 +672,16 @@ function AnalyzeTool() {
         {/* 6 — Calibration: editable formula constants (collapsed) */}
         <Accordion>
           <AccordionItem value="calc" className="border-t border-border">
-            <AccordionTrigger>
-              <span className="eyebrow">キャリブレーション</span>
-            </AccordionTrigger>
+            <AccordionTrigger variant="section">キャリブレーション</AccordionTrigger>
             <AccordionContent>
               <CalcCalibration
                 hc={hc}
                 onHc={setHc}
                 ramanK={ramanK}
                 onRamanK={setRamanK}
-                fpAFactor={fpAFactor}
-                onFpAFactor={setFpAFactor}
                 onReset={() => {
                   setHc(DEFAULT_HC_EV_NM)
                   setRamanK(DEFAULT_RAMAN_K)
-                  setFpAFactor(DEFAULT_FP_OPTIONS.aFactor)
                 }}
               />
             </AccordionContent>
@@ -731,7 +705,7 @@ function AnalyzeTool() {
     <ToolLayout panel={panel} panelTitle="解析設定" panelWidth={320}>
       {/* CENTER: the publication plot only */}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background p-4">
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md border border-border bg-card p-3">
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
           {plotTraces.length === 0 ? null : (
             <PlotView
               ref={svgRef}

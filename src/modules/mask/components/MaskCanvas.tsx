@@ -65,6 +65,10 @@ interface MaskCanvasProps {
   onBeginEdit?: () => void
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi)
+}
+
 /** Bounding box of a shape, in µm. */
 function boundsOf(shape: Shape): Box {
   switch (shape.kind) {
@@ -150,17 +154,25 @@ export function MaskCanvas({
   const pxW = lengthUmX * scale
   const pxH = lengthUmY * scale
 
-  // Measure available space.
+  // Measure available space. The viewport drives a full canvas re-raster, so we
+  // coalesce resize bursts (e.g. the sidebar collapse/expand spring) and only
+  // re-rasterize once the size settles — never on every animation frame.
   useLayoutEffect(() => {
     const el = wrapRef.current
     if (!el) return
+    let timer: ReturnType<typeof setTimeout> | undefined
     const ro = new ResizeObserver((entries) => {
       const r = entries[0].contentRect
-      setViewport({ w: r.width, h: r.height })
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => setViewport({ w: r.width, h: r.height }), 110)
     })
     ro.observe(el)
+    // Initial measure is immediate so the first paint is correctly sized.
     setViewport({ w: el.clientWidth, h: el.clientHeight })
-    return () => ro.disconnect()
+    return () => {
+      ro.disconnect()
+      if (timer) clearTimeout(timer)
+    }
   }, [])
 
   // Render document to display canvas (scaled to fit).
@@ -342,10 +354,13 @@ export function MaskCanvas({
       if (!shape) return
 
       if (drag.mode === 'move') {
+        // Keep the shape's bounding box inside the substrate field.
+        const maxX = Math.max(0, lengthUmX - drag.origin.w)
+        const maxY = Math.max(0, lengthUmY - drag.origin.h)
         onUpdate(shape.id, patchFromBox(shape, {
           ...drag.origin,
-          x: Math.max(0, drag.origin.x + dx),
-          y: Math.max(0, drag.origin.y + dy),
+          x: clamp(drag.origin.x + dx, 0, maxX),
+          y: clamp(drag.origin.y + dy, 0, maxY),
         }))
         return
       }
@@ -356,23 +371,23 @@ export function MaskCanvas({
         const bottom = drag.origin.y + drag.origin.h
         const h = drag.handle
         if (h.includes('w')) {
-          b.x = Math.min(drag.origin.x + dx, right - MIN_UM)
+          b.x = clamp(drag.origin.x + dx, 0, right - MIN_UM)
           b.w = right - b.x
         }
         if (h.includes('e')) {
-          b.w = Math.max(MIN_UM, drag.origin.w + dx)
+          b.w = clamp(drag.origin.w + dx, MIN_UM, lengthUmX - drag.origin.x)
         }
         if (h.includes('n')) {
-          b.y = Math.min(drag.origin.y + dy, bottom - MIN_UM)
+          b.y = clamp(drag.origin.y + dy, 0, bottom - MIN_UM)
           b.h = bottom - b.y
         }
         if (h.includes('s')) {
-          b.h = Math.max(MIN_UM, drag.origin.h + dy)
+          b.h = clamp(drag.origin.h + dy, MIN_UM, lengthUmY - drag.origin.y)
         }
         onUpdate(shape.id, patchFromBox(shape, b))
       }
     },
-    [doc.shapes, onUpdate, pointerToUm],
+    [doc.shapes, onUpdate, pointerToUm, lengthUmX, lengthUmY],
   )
 
   const onPointerUp = useCallback(
@@ -388,19 +403,27 @@ export function MaskCanvas({
       setPreview(null)
 
       const { x: umX, y: umY } = pointerToUm(e)
-      const x = Math.min(drag.startUmX, umX)
-      const y = Math.min(drag.startUmY, umY)
-      const w = Math.abs(umX - drag.startUmX)
-      const h = Math.abs(umY - drag.startUmY)
+      const x0 = Math.min(drag.startUmX, umX)
+      const y0 = Math.min(drag.startUmY, umY)
+      const w0 = Math.abs(umX - drag.startUmX)
+      const h0 = Math.abs(umY - drag.startUmY)
 
       // A negligible drag is treated as a click: place a default-sized shape.
-      const isClick = Math.max(w, h) * scale < CLICK_PX
+      const isClick = Math.max(w0, h0) * scale < CLICK_PX
+
+      // Keep the dragged box inside the substrate field.
+      const x = clamp(x0, 0, lengthUmX)
+      const y = clamp(y0, 0, lengthUmY)
+      const w = Math.min(w0, lengthUmX - x)
+      const h = Math.min(h0, lengthUmY - y)
+      const startX = clamp(drag.startUmX, 0, lengthUmX)
+      const startY = clamp(drag.startUmY, 0, lengthUmY)
 
       const made = createShape(
         tool,
         { x, y, w, h },
-        drag.startUmX,
-        drag.startUmY,
+        startX,
+        startY,
         defaults,
         isClick,
       )
@@ -409,7 +432,7 @@ export function MaskCanvas({
         onToolChange('select')
       }
     },
-    [tool, defaults, scale, onAdd, onToolChange, pointerToUm],
+    [tool, defaults, scale, onAdd, onToolChange, pointerToUm, lengthUmX, lengthUmY],
   )
 
   // Delete key removes selection.
@@ -478,7 +501,7 @@ export function MaskCanvas({
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                className="block touch-none select-none shadow-sm"
+                className="block touch-none select-none"
                 style={{ cursor, width: pxW, height: pxH }}
               />
 
@@ -613,7 +636,7 @@ function createShape(
         kind: 'text',
         x: startX,
         y: startY,
-        text: 'Text',
+        text: 'テキスト',
         heightUm,
       }
       return shape

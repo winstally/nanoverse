@@ -10,24 +10,20 @@ export interface CalcCalibrationProps {
   onHc: (n: number) => void
   ramanK: number
   onRamanK: (n: number) => void
-  fpAFactor: number
-  onFpAFactor: (n: number) => void
   onReset: () => void
   className?: string
 }
 
 /**
- * Editable calibration constants for every conversion formula used by the
- * analyzer. The formulas are shown explicitly; their constants are editable and
- * persist with the project.
+ * Editable calibration constants for the conversion formulas. The FP relation is
+ * shown for reference only: its factor (2000 = 2 round-trip × 1000 µm→nm) is a
+ * unit/geometry constant, not a calibration value, so it is fixed.
  */
 export function CalcCalibration({
   hc,
   onHc,
   ramanK,
   onRamanK,
-  fpAFactor,
-  onFpAFactor,
   onReset,
   className,
 }: CalcCalibrationProps) {
@@ -53,21 +49,13 @@ export function CalcCalibration({
           min={0}
           onChange={onRamanK}
         />
-        <p className="text-[11px] text-muted-foreground">
-          λ_L（励起波長）は「測定と軸」で設定します。
-        </p>
       </Formula>
 
-      <Formula title="FP 共振" expr="λ = A / (m + δ),  A = k · n_eff · L">
-        <NumberField
-          label="k（A 係数）"
-          value={fpAFactor}
-          step={1}
-          min={0}
-          onChange={onFpAFactor}
-        />
-        <p className="text-[11px] text-muted-foreground">
-          既定 2000 = 2（往復）× 1000（µm→nm）。
+      <Formula title="FP 共振" expr="λ = A / (m + δ),  A = 2000 · n_g,FP · L">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          係数 2000 = 2(往復) × 1000(µm→nm) の固定値で、較正値ではありません。
+          得られる n_g,FP は主にピーク間隔(FSR)で決まる FP 由来の群屈折率相当で、
+          位相屈折率 n_eff とは限りません（分散が無視できる場合のみ近似）。
         </p>
       </Formula>
 

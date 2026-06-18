@@ -7,9 +7,9 @@ import type { PlotStyle } from '@/modules/analyze/plot/preset'
 
 /**
  * Zod schemas for data persisted in IndexedDB. Applied on READ paths so that a
- * single corrupt record can't crash a load/list. The schemas are intentionally
- * LENIENT: required core fields are enforced, but optional/extra keys pass
- * through so valid records written by older app versions still validate.
+ * single corrupt record can't crash a load/list. The schemas are the exact
+ * persisted contract: unknown keys are stripped, genuinely corrupt records are
+ * dropped.
  */
 
 // ── Mask shapes ───────────────────────────────────────────────────────────────
@@ -109,34 +109,27 @@ export const legendLayoutSchema = z.object({
   visible: z.boolean(),
 })
 
-// ── Plot style (lenient) ──────────────────────────────────────────────────────
+// ── Plot style ────────────────────────────────────────────────────────────────
 
-/**
- * Required core fields are enforced; everything else is optional and unknown
- * keys pass through. This keeps old sessions (which may lack newer optional
- * fields, or carry extra ones) valid.
- */
-export const plotStyleSchema = z
-  .object({
-    mirror: z.boolean(),
-    tickInward: z.boolean(),
-    axisThickness: z.number(),
-    fontFamily: z.string(),
-    fontSize: z.number(),
+/** The publication-look base fields are required; session settings are optional. */
+export const plotStyleSchema = z.object({
+  mirror: z.boolean(),
+  tickInward: z.boolean(),
+  axisThickness: z.number(),
+  fontFamily: z.string(),
+  fontSize: z.number(),
 
-    legendPosition: z
-      .enum(['top-right', 'top-left', 'bottom-right', 'bottom-left', 'none'])
-      .optional(),
-    legend: legendLayoutSchema.optional(),
-    axisMode: z.enum(['nm', 'eV']).optional(),
-    laserNm: z.number().optional(),
-    normalize: z.boolean().optional(),
-    baselineMode: z.enum(['none', 'min', 'endpoints']).optional(),
-    fpL: z.number().optional(),
-    fpMinWl: z.number().optional(),
-    fpMaxWl: z.number().optional(),
-  })
-  .passthrough()
+  legend: legendLayoutSchema.optional(),
+  axisMode: z.enum(['nm', 'eV']).optional(),
+  laserNm: z.number().optional(),
+  normalize: z.boolean().optional(),
+  baselineMode: z.enum(['none', 'min', 'endpoints']).optional(),
+  fpL: z.number().optional(),
+  fpMinWl: z.number().optional(),
+  fpMaxWl: z.number().optional(),
+  hcEvNm: z.number().optional(),
+  ramanK: z.number().optional(),
+})
 
 // ── Analyze session ───────────────────────────────────────────────────────────
 
