@@ -22,6 +22,7 @@ import {
 } from '@/modules/analyze/strain'
 import PlotView from '@/modules/analyze/plot/PlotView'
 import type { PlotOverlay } from '@/modules/analyze/plot/PlotView'
+import { resolvePlotDomains } from '@/modules/analyze/plot/domain'
 import { DEFAULT_PLOT_STYLE, type PlotStyle } from '@/modules/analyze/plot/preset'
 import {
   transformX,
@@ -655,6 +656,31 @@ function AnalyzeTool() {
   // Y-axis label: measurement-specific intensity in arbitrary units.
   const yLabel = `${doNormalize ? 'Norm. ' : ''}${type === 'PL' ? 'PL ' : ''}Intensity (a.u.)`
   const xAxisLabel = `${axisInfo.xLabel} (${axisInfo.xUnit})`
+  const pxpOverlay =
+    analysisType === 'peak' && fitOverlay ? fitOverlay : undefined
+  const pxpDomains = React.useMemo(
+    () =>
+      resolvePlotDomains({
+        traces: plotTraces,
+        overlays: pxpOverlay ? [pxpOverlay] : [],
+        xLog,
+        yLog,
+        xMin: range.xMin,
+        xMax: range.xMax,
+        yMin: range.yMin,
+        yMax: range.yMax,
+      }),
+    [
+      plotTraces,
+      pxpOverlay,
+      xLog,
+      yLog,
+      range.xMin,
+      range.xMax,
+      range.yMin,
+      range.yMax,
+    ],
+  )
 
   // ── Fit ───────────────────────────────────────────────────────────────────
   const handleFit = React.useCallback(() => {
@@ -941,7 +967,35 @@ function AnalyzeTool() {
           <SectionLabel>出力</SectionLabel>
           <ExportButtons
             getSvg={getSvg}
-            getTraces={() => traces.filter((t) => t.visible && t.x.length >= 2)}
+            getTraces={() => plotTraces}
+            getPxpOptions={() => ({
+              xLabel: xAxisLabel,
+              yLabel,
+              xMin: pxpDomains.drawnX[0],
+              xMax: pxpDomains.drawnX[1],
+              yMin: pxpDomains.drawnY[0],
+              yMax: pxpDomains.drawnY[1],
+              xLog,
+              yLog,
+              legend,
+              overlays:
+                pxpOverlay
+                  ? [
+                      {
+                        name: 'fit',
+                        x: pxpOverlay.x,
+                        y: pxpOverlay.y,
+                        color: pxpOverlay.color,
+                        lineWidth: 2,
+                        lineStyle: 3,
+                      },
+                    ]
+                  : undefined,
+              verticalLines:
+                analysisType === 'fp' ? fpVerticalLines : undefined,
+              verticalLineLabel:
+                analysisType === 'fp' && fpVerticalLines ? 'FP共振' : undefined,
+            })}
             baseName={sessionName.trim() || 'spectrum'}
             disabled={plotTraces.length === 0}
             className="w-full"

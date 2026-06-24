@@ -2,10 +2,10 @@ import { Trace, TRACE_COLORS, DEFAULT_LINE_WIDTH } from './types'
 import type { MeasurementType } from './types'
 
 /**
- * Igor Pro packed-experiment (.pxp) reader — imports the measured FACTS only:
- * the raw data waves (X axis + Y spectra), paired via the Display recreation
- * macro, with the measurement type auto-detected. Igor fit / analysis artifacts
- * (`fit_*`, `W_coef`, …) and presentation (colours, legend) are not imported.
+ * Igor Pro packed-experiment (.pxp) reader — imports primary plotted data waves:
+ * X axis + Y spectra paired via the Display recreation macro, with the
+ * measurement type auto-detected. Igor fit / analysis artifacts (`fit_*`,
+ * `W_coef`, …) and presentation (colours, legend) are not imported.
  *
  * The .pxp is a sequence of records: PackedFileRecordHeader { recordType:u16,
  * version:i16, numDataBytes:i32 } + data. Wave records (type 3) hold an Igor
@@ -197,11 +197,11 @@ export function parsePxp(buffer: ArrayBuffer): PxpImportResult {
 
 /**
  * Measurement type from the bottom-axis label, falling back to the X range
- * (PL ≈ wavelength nm ≳ 1000; Raman ≈ 100–1000 cm⁻¹; XRD ≈ 2θ < 100°).
+ * (PL wavelength ≳ 1000 nm or energy eV; Raman ≈ 100–1000 cm⁻¹; XRD ≈ 2θ < 100°).
  */
 function detectType(macro: string, traces: Trace[]): MeasurementType | null {
   const label = (macro.match(/Label bottom "([^"]*)"/) || [])[1] || ''
-  if (/wavelength|nm/i.test(label)) return 'PL'
+  if (/wavelength|energy|eV|nm/i.test(label)) return 'PL'
   if (/raman|cm/i.test(label)) return 'Raman'
   if (/2theta|theta|omega|deg|2θ/i.test(label)) return 'XRD'
   if (traces.length === 0) return null

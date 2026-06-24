@@ -5,6 +5,7 @@ import { scaleLinear, scaleLog } from 'd3-scale'
 import type { LegendLayout, Trace } from '../types'
 import { DEFAULT_LEGEND, DEFAULT_LINE_WIDTH } from '../types'
 import type { PlotStyle } from './preset'
+import { resolvePlotDomains } from './domain'
 
 export interface PlotOverlay {
   x: number[]
@@ -81,35 +82,6 @@ function computeMargins(style: PlotStyle) {
   }
 }
 
-function niceExtent(values: number[]): [number, number] {
-  let min = Infinity
-  let max = -Infinity
-  for (const v of values) {
-    if (!Number.isFinite(v)) continue
-    if (v < min) min = v
-    if (v > max) max = v
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1]
-  if (min === max) {
-    const pad = min === 0 ? 1 : Math.abs(min) * 0.1
-    return [min - pad, max + pad]
-  }
-  return [min, max]
-}
-
-function positiveExtent(values: number[]): [number, number] {
-  let min = Infinity
-  let max = -Infinity
-  for (const v of values) {
-    if (!Number.isFinite(v) || v <= 0) continue
-    if (v < min) min = v
-    if (v > max) max = v
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [1, 10]
-  if (min === max) return [min / 2, max * 2]
-  return [min, max]
-}
-
 function formatTick(v: number): string {
   if (v === 0) return '0'
   const abs = Math.abs(v)
@@ -179,56 +151,26 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
   const svgW = plotSide + margins.left + margins.right
   const svgH = plotSide + margins.top + margins.bottom
 
-  // Gather all data extents from the visible traces.
-  const allX: number[] = []
-  const allY: number[] = []
-  for (const t of visible) {
-    for (const v of t.x) allX.push(v)
-    for (const v of t.y) allY.push(v)
-  }
-  if (hasOverlay && overlay) {
-    for (const v of overlay.x) allX.push(v)
-    for (const v of overlay.y) allY.push(v)
-  }
-
-  const autoX = xLog ? positiveExtent(allX) : niceExtent(allX)
-  const autoY = yLog ? positiveExtent(allY) : niceExtent(allY)
-
-  // The autoscale domain AS DRAWN: linear axes are nice-rounded by the scale
-  // (log axes aren't). Report it so manual bounds can seed to the shown axis.
-  const shownX = xLog
-    ? autoX
-    : (scaleLinear().domain(autoX).nice().domain() as [number, number])
-  const shownY = yLog
-    ? autoY
-    : (scaleLinear().domain(autoY).nice().domain() as [number, number])
+  const domains = resolvePlotDomains({
+    traces: visible,
+    overlays: hasOverlay && overlay ? [overlay] : [],
+    xLog,
+    yLog,
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+  })
+  const shownX = domains.shownX
+  const shownY = domains.shownY
   React.useEffect(() => {
     onAutoDomain?.([shownX[0], shownX[1]], [shownY[0], shownY[1]])
     // Depend on primitives so this fires only when the drawn auto domain changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownX[0], shownX[1], shownY[0], shownY[1], onAutoDomain])
 
-  // Apply any manual bounds (partial allowed); fall back to auto if a manual
-  // domain ends up invalid (min ≥ max, non-finite).
-  const resolve = (
-    auto: [number, number],
-    lo: number | undefined,
-    hi: number | undefined,
-    log: boolean,
-  ): { domain: [number, number]; manual: boolean } => {
-    // A bound counts only if finite (and positive on a log axis).
-    const okLo = Number.isFinite(lo) && (!log || (lo as number) > 0)
-    const okHi = Number.isFinite(hi) && (!log || (hi as number) > 0)
-    const manual = okLo || okHi
-    const d: [number, number] = [
-      okLo ? (lo as number) : auto[0],
-      okHi ? (hi as number) : auto[1],
-    ]
-    if (!(d[0] < d[1])) return { domain: auto, manual: false }
-    return { domain: d, manual }
-  }
-  const xR = resolve(autoX, xMin, xMax, xLog)
-  const yR = resolve(autoY, yMin, yMax, yLog)
+  const xR = domains.x
+  const yR = domains.y
 
   // Exact bounds when the user set them; otherwise round to a nice extent.
   const xScale = xLog

@@ -7,12 +7,14 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { exportPng } from '../plot/export'
 import { buildPxp } from '../pxp-export'
+import type { PxpExportOptions } from '../pxp-export'
 import type { Trace } from '../types'
 
 export interface ExportButtonsProps {
   getSvg: () => SVGSVGElement | null
-  /** Visible traces (raw native x/y) to export as Igor waves. */
+  /** Visible traces in the same coordinate/value space as the rendered plot. */
   getTraces?: () => Trace[]
+  getPxpOptions?: () => PxpExportOptions
   baseName?: string
   disabled?: boolean
   className?: string
@@ -21,6 +23,7 @@ export interface ExportButtonsProps {
 export function ExportButtons({
   getSvg,
   getTraces,
+  getPxpOptions,
   baseName = 'spectrum',
   disabled,
   className,
@@ -43,7 +46,7 @@ export function ExportButtons({
       return
     }
     try {
-      const blob = buildPxp(traces)
+      const blob = buildPxp(traces, getPxpOptions?.())
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -56,7 +59,7 @@ export function ExportButtons({
     } catch {
       toast.error('.pxp の書き出しに失敗しました')
     }
-  }, [getTraces, baseName])
+  }, [getTraces, getPxpOptions, baseName])
 
   return (
     <div className={cn('grid grid-cols-2 gap-2', className)}>

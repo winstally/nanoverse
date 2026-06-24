@@ -30,7 +30,7 @@ export function FileDrop({ onTraces, onType, className }: FileDropProps) {
         const all: Trace[] = []
         let detectedType: MeasurementType | null = null
         let skipped = 0
-        // Igor .pxp imports the measured data waves (X + Y), txt parses 2 columns.
+        // Igor .pxp imports primary plotted waves (X + Y), txt parses 2 columns.
         for (const f of list.filter((f) => /\.pxp$/i.test(f.name))) {
           const r = await parsePxpFile(f)
           all.push(...r.traces)
