@@ -36,6 +36,24 @@ interface LabToolsDB extends DBSchema {
 const DB_NAME = 'lab-tools'
 const DB_VERSION = 2
 
+// ── Data-change notifications ─────────────────────────────────────────────────
+// Bulk operations (import / clear) happen outside any page's own mutation flow,
+// so pages can't know their saved lists went stale. Subscribers (the mask /
+// analyze pages) re-fetch their lists when notified.
+const dataChangeListeners = new Set<() => void>()
+
+/** Subscribe to bulk data changes (import / clear). Returns an unsubscribe fn. */
+export function onDataChange(fn: () => void): () => void {
+  dataChangeListeners.add(fn)
+  return () => {
+    dataChangeListeners.delete(fn)
+  }
+}
+
+function notifyDataChange(): void {
+  for (const fn of dataChangeListeners) fn()
+}
+
 let dbPromise: Promise<IDBPDatabase<LabToolsDB>> | null = null
 
 function getDb(): Promise<IDBPDatabase<LabToolsDB>> {
@@ -219,6 +237,8 @@ export async function importAllData(file: Blob | string): Promise<ImportResult> 
     tx.done,
   ])
 
+  notifyDataChange()
+
   return {
     maskDocs: masks.length,
     analyzeSessions: sessions.length,
@@ -235,6 +255,7 @@ export async function clearAllData(): Promise<void> {
     tx.objectStore('analyzeSessions').clear(),
     tx.done,
   ])
+  notifyDataChange()
 }
 
 /** Best-effort storage usage estimate. Returns zeros when the API is unavailable (SSR / unsupported). */

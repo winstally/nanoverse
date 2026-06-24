@@ -83,8 +83,10 @@ export const polaritySchema = z.enum(['darkOnLight', 'lightOnDark'])
 export const maskDocumentSchema = z.object({
   id: z.string(),
   name: z.string(),
-  widthUm: z.number(),
+  widthUm: z.number().positive(), // authority for all geometry; reject corrupt 0/negative
   heightUm: z.number(),
+  magnification: z.number().positive().optional().catch(undefined),
+  umPerCm: z.number().positive().optional().catch(undefined),
   shapes: z.array(shapeSchema),
   polarity: polaritySchema,
   updatedAt: z.number().optional(),
@@ -122,13 +124,24 @@ export const plotStyleSchema = z.object({
   legend: legendLayoutSchema.optional(),
   axisMode: z.enum(['nm', 'eV']).optional(),
   laserNm: z.number().optional(),
+  ramanInput: z.enum(['cm', 'nm']).optional(),
   normalize: z.boolean().optional(),
   baselineMode: z.enum(['none', 'min', 'endpoints']).optional(),
+  xMin: z.number().optional(),
+  xMax: z.number().optional(),
+  yMin: z.number().optional(),
+  yMax: z.number().optional(),
+  xLog: z.boolean().optional(),
+  yLog: z.boolean().optional(),
   fpL: z.number().optional(),
   fpMinWl: z.number().optional(),
   fpMaxWl: z.number().optional(),
   hcEvNm: z.number().optional(),
   ramanK: z.number().optional(),
+  strainSiRef: z.number().optional(),
+  strainGeRef: z.number().optional(),
+  strainSiCoef: z.number().optional(),
+  strainGeCoef: z.number().optional(),
 })
 
 // ── Analyze session ───────────────────────────────────────────────────────────

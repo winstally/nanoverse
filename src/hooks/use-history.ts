@@ -47,7 +47,10 @@ export function useHistory<T>(initial: T, limit = 200): History<T> {
             ? (updater as (p: T) => T)(s.present)
             : updater
         if (Object.is(next, s.present)) return s
-        if (opts?.history === false) return { ...s, present: next }
+        // A transient edit still forks the timeline, so it must invalidate the
+        // redo stack — otherwise a stale `future` entry could be redone on top
+        // of it. (No-op for drag coalescing, where snapshot() already cleared it.)
+        if (opts?.history === false) return { ...s, present: next, future: [] }
         return {
           past: [...s.past.slice(-(limit - 1)), s.present],
           present: next,

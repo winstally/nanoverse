@@ -22,6 +22,8 @@ export interface AxisControlsProps {
   onXMode: (m: AxisMode) => void
   laserNm: number
   onLaserNm: (nm: number) => void
+  ramanInput: 'cm' | 'nm'
+  onRamanInput: (v: 'cm' | 'nm') => void
   normalize: boolean
   onNormalize: (v: boolean) => void
   legendVisible: boolean
@@ -49,6 +51,8 @@ export function AxisControls({
   onXMode,
   laserNm,
   onLaserNm,
+  ramanInput,
+  onRamanInput,
   normalize,
   onNormalize,
   legendVisible,
@@ -111,16 +115,42 @@ export function AxisControls({
       )}
 
       {type === 'Raman' && (
-        <NumberField
-          label="励起波長"
-          unit="nm"
-          value={laserNm}
-          min={1}
-          step={1}
-          onChange={(v) => {
-            if (Number.isFinite(v) && v > 0) onLaserNm(v)
-          }}
-        />
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-muted-foreground">横軸データ</Label>
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              spacing={0}
+              value={[ramanInput]}
+              onValueChange={(v) => {
+                const next = v[0] as 'cm' | 'nm' | undefined
+                if (next) onRamanInput(next)
+              }}
+              aria-label="ラマンの横軸データ"
+              className="w-full"
+            >
+              <ToggleGroupItem value="cm" className="flex-1">
+                cm⁻¹
+              </ToggleGroupItem>
+              <ToggleGroupItem value="nm" className="flex-1">
+                nm→変換
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          {ramanInput === 'nm' && (
+            <NumberField
+              label="励起波長"
+              unit="nm"
+              value={laserNm}
+              min={1}
+              step={1}
+              onChange={(v) => {
+                if (Number.isFinite(v) && v > 0) onLaserNm(v)
+              }}
+            />
+          )}
+        </>
       )}
 
       <div className="flex items-center justify-between">

@@ -139,9 +139,11 @@ export function MaskCanvas({
   const [preview, setPreview] = useState<Box | null>(null)
   const dragRef = useRef<DragState | null>(null)
 
-  // µm dimensions per document pixel of the DMD = umPerPx; total µm span of canvas.
-  const lengthUmX = doc.widthUm
-  const lengthUmY = doc.heightUm
+  // Total µm span of the canvas. Taken from the derived calibration (single
+  // geometry authority) so the editor field always matches the exported BMP,
+  // even when a stale heightUm sits in the document after an undo.
+  const lengthUmX = cal.substrateWUm
+  const lengthUmY = cal.substrateHUm
 
   // Compute fit scale (screen px per µm), preserving the substrate aspect ratio.
   const scale = useMemo(() => {

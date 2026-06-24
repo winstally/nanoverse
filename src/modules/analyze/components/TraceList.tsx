@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Eye, EyeOff, Trash2 } from 'lucide-react'
+import { Reorder, useDragControls, useReducedMotion } from 'motion/react'
+import { Eye, EyeOff, Trash2, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,8 @@ import { DEFAULT_LINE_WIDTH, type Trace } from '../types'
 
 export interface TraceListProps {
   traces: Trace[]
+  /** New order after a drag / keyboard move. Order = legend, z-order, fit target. */
+  onReorder: (traces: Trace[]) => void
   onRename: (id: string, name: string) => void
   onToggle: (id: string) => void
   onRemove: (id: string) => void
@@ -25,25 +28,71 @@ export interface TraceListProps {
   className?: string
 }
 
+// Match the app's spring (photoverse layout) so reorder motion is consistent.
+const SPRING = { type: 'spring', stiffness: 420, damping: 30, mass: 1 } as const
+
 function TraceRow({
   trace,
+  index,
+  count,
+  reduceMotion,
   onRename,
   onToggle,
   onRemove,
   onColor,
   onLineWidth,
+  onMove,
 }: {
   trace: Trace
+  index: number
+  count: number
+  reduceMotion: boolean
   onRename: (id: string, name: string) => void
   onToggle: (id: string) => void
   onRemove: (id: string) => void
   onColor: (id: string, color: string) => void
   onLineWidth: (id: string, width: number) => void
+  onMove: (index: number, dir: -1 | 1) => void
 }) {
   const lw = trace.lineWidth ?? DEFAULT_LINE_WIDTH
+  const controls = useDragControls()
 
   return (
-    <li className="flex items-center gap-1.5 rounded-md px-1 py-1 transition-colors hover:bg-muted">
+    <Reorder.Item
+      value={trace}
+      dragListener={false}
+      dragControls={controls}
+      transition={reduceMotion ? { duration: 0 } : SPRING}
+      whileDrag={{
+        scale: 1.01,
+        backgroundColor: 'var(--muted)',
+        boxShadow: '0 10px 28px -12px rgba(20,23,28,0.28)',
+      }}
+      // touch-none on the whole row: motion only auto-sets touch-action on a
+      // draggable item when dragListener isn't false, so without this a touch
+      // drag drifting off the small handle is stolen by the panel's scroll.
+      className="group relative flex touch-none items-center gap-1 rounded-md px-1 py-1 transition-colors hover:bg-muted"
+    >
+      {/* Drag handle — drag starts only here, so inputs/switch stay usable.
+          Arrow keys move the row for keyboard users. */}
+      <button
+        type="button"
+        onPointerDown={(e) => controls.start(e)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            onMove(index, -1)
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            onMove(index, 1)
+          }
+        }}
+        aria-label={`並べ替え（${index + 1} / ${count}）。上下キーで移動`}
+        className="flex shrink-0 cursor-grab touch-none rounded-sm p-0.5 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground/70 hover:!text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:cursor-grabbing"
+      >
+        <GripVertical size={14} aria-hidden />
+      </button>
+
       {/* Color + line-width popover */}
       <Popover>
         <PopoverTrigger
@@ -134,12 +183,13 @@ function TraceRow({
       >
         <Trash2 />
       </Button>
-    </li>
+    </Reorder.Item>
   )
 }
 
 export function TraceList({
   traces,
+  onReorder,
   onRename,
   onToggle,
   onRemove,
@@ -147,21 +197,55 @@ export function TraceList({
   onLineWidth,
   className,
 }: TraceListProps) {
+  const reduceMotion = useReducedMotion() ?? false
+  // Screen-reader feedback for keyboard reordering (handle has no visible label).
+  const [liveMsg, setLiveMsg] = React.useState('')
+
+  const move = React.useCallback(
+    (index: number, dir: -1 | 1) => {
+      const j = index + dir
+      if (j < 0 || j >= traces.length) {
+        setLiveMsg('これ以上移動できません')
+        return
+      }
+      const next = traces.slice()
+      ;[next[index], next[j]] = [next[j], next[index]]
+      setLiveMsg(`${traces[index].name} を ${j + 1} / ${traces.length} に移動`)
+      onReorder(next)
+    },
+    [traces, onReorder],
+  )
+
   if (traces.length === 0) return null
 
   return (
-    <ul className={cn('flex flex-col gap-0.5', className)}>
-      {traces.map((t) => (
-        <TraceRow
-          key={t.id}
-          trace={t}
-          onRename={onRename}
-          onToggle={onToggle}
-          onRemove={onRemove}
-          onColor={onColor}
-          onLineWidth={onLineWidth}
-        />
-      ))}
-    </ul>
+    <>
+      <Reorder.Group
+        as="ul"
+        axis="y"
+        values={traces}
+        onReorder={onReorder}
+        className={cn('flex flex-col gap-0.5', className)}
+      >
+        {traces.map((t, i) => (
+          <TraceRow
+            key={t.id}
+            trace={t}
+            index={i}
+            count={traces.length}
+            reduceMotion={reduceMotion}
+            onRename={onRename}
+            onToggle={onToggle}
+            onRemove={onRemove}
+            onColor={onColor}
+            onLineWidth={onLineWidth}
+            onMove={move}
+          />
+        ))}
+      </Reorder.Group>
+      <div aria-live="polite" role="status" className="sr-only">
+        {liveMsg}
+      </div>
+    </>
   )
 }

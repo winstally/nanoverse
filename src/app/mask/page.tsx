@@ -1,9 +1,15 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryState } from 'nuqs'
 import { Download } from 'lucide-react'
-import { Calibration, defaultCalibration } from '@/modules/mask/calibration'
+import {
+  Calibration,
+  defaultCalibration,
+  substrateWidthUm,
+  SLIDE_W_CM,
+  DEFAULT_MAGNIFICATION,
+} from '@/modules/mask/calibration'
 import {
   createDefaultDocument,
   MaskDocument,
@@ -43,8 +49,10 @@ import {
   listMaskDocs,
   loadMaskDoc,
   saveMaskDoc,
+  onDataChange,
 } from '@/lib/storage'
 import { logEvent } from '@/lib/log'
+import { getLastProjectId, setLastProjectId } from '@/lib/last-project'
 import { toast } from 'sonner'
 
 const initialCal = defaultCalibration()
@@ -54,9 +62,89 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function MaskTool() {
-  const [cal, setCal] = useState<Calibration>(initialCal)
+  // DMD resolution is hardware (session-local). The substrate geometry lives in
+  // the document, so calibration stays consistent with the canvas/export and
+  // round-trips through undo/redo + autosave.
+  const [dmd, setDmd] = useState({ w: initialCal.dmdW, h: initialCal.dmdH })
   const history = useHistory<MaskDocument>(createDefaultDocument(initialCal))
   const doc = history.state
+
+  // Calibration is fully DERIVED from the live DMD (hardware) + the document's
+  // substrate width — the single geometry authority. Width is the only stored
+  // anchor; µm/cm and the field height (square pixels) are computed, so the
+  // canvas, the exported BMP, and the panel can never disagree, even across
+  // undo/redo where a stored heightUm/umPerCm could otherwise go stale.
+  const cal = useMemo<Calibration>(
+    () => ({
+      dmdW: dmd.w,
+      dmdH: dmd.h,
+      magnification:
+        doc.magnification != null && doc.magnification > 0
+          ? doc.magnification
+          : DEFAULT_MAGNIFICATION,
+      umPerCm: doc.widthUm / SLIDE_W_CM,
+      substrateWUm: doc.widthUm,
+      substrateHUm: doc.widthUm * (dmd.h / dmd.w),
+    }),
+    [dmd.w, dmd.h, doc.magnification, doc.widthUm],
+  )
+
+  // Calibration edits update the document's substrate geometry (so canvas +
+  // export agree). They use { history: false } — like the doc name — so the
+  // undo stack isn't flooded per keystroke; they fold into the next real step.
+  const handleMagnification = useCallback(
+    (m: number) => {
+      if (!(m > 0)) return
+      history.set(
+        (d) => {
+          const curUmPerCm = d.umPerCm ?? d.widthUm / SLIDE_W_CM
+          // µm/cm ∝ 1/magnification — preserve the optics' native scale.
+          const constant = curUmPerCm * (d.magnification ?? DEFAULT_MAGNIFICATION)
+          const umPerCm = constant / m
+          const widthUm = substrateWidthUm(umPerCm)
+          return {
+            ...d,
+            magnification: m,
+            umPerCm,
+            widthUm,
+            heightUm: widthUm * (dmd.h / dmd.w),
+          }
+        },
+        { history: false },
+      )
+    },
+    [history, dmd.h, dmd.w],
+  )
+
+  // Recalibrate: set µm-per-cm directly at the current magnification.
+  const handleUmPerCm = useCallback(
+    (u: number) => {
+      if (!(u > 0)) return
+      history.set(
+        (d) => {
+          const widthUm = substrateWidthUm(u)
+          return { ...d, umPerCm: u, widthUm, heightUm: widthUm * (dmd.h / dmd.w) }
+        },
+        { history: false },
+      )
+    },
+    [history, dmd.h, dmd.w],
+  )
+
+  const handleDmdChange = useCallback(
+    (w: number, h: number) => {
+      if (!(w > 0) || !(h > 0)) return
+      const W = Math.round(w)
+      const H = Math.round(h)
+      setDmd({ w: W, h: H })
+      // Pixels stay square: field height follows the new aspect from the width.
+      history.set((d) => ({ ...d, heightUm: d.widthUm * (H / W) }), {
+        history: false,
+      })
+    },
+    [history],
+  )
+
   const [tool, setTool] = useState<ToolKind>('select')
   const [toolDefaults, setToolDefaults] = useState<ToolDefaults>(DEFAULT_TOOL_DEFAULTS)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -93,12 +181,22 @@ function MaskTool() {
     }
   }, [])
 
+  // Refresh the saved-project list when data is imported / cleared elsewhere
+  // (e.g. the system menu), so the switcher reflects it without a reload.
+  useEffect(() => onDataChange(() => void refreshList()), [refreshList])
+
   const persist = useCallback(
     async (d: MaskDocument) => {
+      // Don't create empty projects: skip a doc with no shapes that was never
+      // saved (e.g. a fresh tab). Once it has content (or already exists), keep
+      // saving — so emptying a real project still persists.
+      const alreadySaved = savedDocs.some((s) => s.id === d.id)
+      if (d.shapes.length === 0 && !alreadySaved) return
       await saveMaskDoc(d)
+      setLastProjectId('mask', d.id)
       await refreshList()
     },
-    [refreshList],
+    [refreshList, savedDocs],
   )
 
   const { status } = useAutosave(doc, persist)
@@ -207,27 +305,30 @@ function MaskTool() {
     // Width is the magnification anchor; re-derive the field height from the DMD
     // aspect so pixels are square. This also normalises legacy masks that were
     // saved with an independent (anisotropic) height.
-    const pitch = loaded.widthUm / cal.dmdW
-    const heightUm = cal.dmdH * pitch
+    const heightUm = loaded.widthUm * (dmd.h / dmd.w)
     // Drop persistence metadata (updatedAt) — keep only MaskDocument fields.
+    // Legacy docs without magnification/umPerCm fall back to the 20× anchor.
     const next: MaskDocument = {
       id: loaded.id,
       name: loaded.name,
       widthUm: loaded.widthUm,
       heightUm,
+      magnification:
+        loaded.magnification != null && loaded.magnification > 0
+          ? loaded.magnification
+          : DEFAULT_MAGNIFICATION,
+      // Width is the authority; derive µm/cm from it so they can't diverge
+      // (guards externally-edited docs with an inconsistent stored umPerCm).
+      umPerCm: loaded.widthUm / SLIDE_W_CM,
       shapes: loaded.shapes,
       polarity: loaded.polarity,
     }
     history.reset(next)
-    setCal((c) => ({
-      ...c,
-      substrateWUm: next.widthUm,
-      substrateHUm: next.heightUm,
-    }))
+    setLastProjectId('mask', next.id) // resume this on the next tab switch
     setSelectedId(null)
     setTool('select')
     return next
-  }, [history, cal.dmdW, cal.dmdH])
+  }, [history, dmd.h, dmd.w])
 
   const handleSelect = useCallback(
     async (id: string) => {
@@ -246,9 +347,11 @@ function MaskTool() {
   )
 
   const handleCreateNew = useCallback(() => {
-    const fresh = createDefaultDocument(defaultCalibration())
+    const cal0 = defaultCalibration()
+    const fresh = createDefaultDocument(cal0)
+    setDmd({ w: cal0.dmdW, h: cal0.dmdH })
     history.reset(fresh)
-    setCal(defaultCalibration())
+    setLastProjectId('mask', fresh.id)
     setSelectedId(null)
     setTool('select')
     // Clear the URL param; autosave + the state→URL effect will set it once the
@@ -270,23 +373,26 @@ function MaskTool() {
   )
 
   // --- URL ⇄ state ---------------------------------------------------------
-  // URL → state (ONCE on mount): if ?project points at a stored doc that isn't
-  // the current one, load it asynchronously. The setState happens inside the
-  // .then callback (not the effect body), so it does not cascade.
+  // Resume ONCE on mount: a ?project in the URL wins; otherwise fall back to the
+  // last project opened in this tool, so switching tabs returns to your work
+  // instead of a blank doc. The setState happens inside the .then callback (not
+  // the effect body), so it does not cascade.
   const hydratedFromUrl = useRef(false)
   useEffect(() => {
     if (hydratedFromUrl.current) return
     hydratedFromUrl.current = true
-    if (!projectParam || projectParam === doc.id) return
-    const target = projectParam
+    const target = projectParam ?? getLastProjectId('mask')
+    if (!target || target === doc.id) return
     loadMaskDoc(target)
       .then((loaded) => {
         if (loaded) {
           applyLoadedDoc(loaded)
+          void setProjectParam(loaded.id)
           logEvent(`マスク「${loaded.name}」を読み込みました`)
         } else {
-          // Unknown id — drop the stale param, keep the current new doc.
-          void setProjectParam(null)
+          // Unknown id — drop the stale URL param + remembered id, keep new doc.
+          if (projectParam) void setProjectParam(null)
+          setLastProjectId('mask', null)
         }
       })
       .catch(() => {
@@ -473,7 +579,12 @@ function MaskTool() {
                 キャリブレーション
               </AccordionTrigger>
               <AccordionContent>
-                <CalibrationPanel cal={cal} onCalChange={setCal} />
+                <CalibrationPanel
+                  cal={cal}
+                  onMagnification={handleMagnification}
+                  onUmPerCm={handleUmPerCm}
+                  onDmd={handleDmdChange}
+                />
               </AccordionContent>
             </AccordionItem>
           </Accordion>

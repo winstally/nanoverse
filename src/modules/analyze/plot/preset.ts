@@ -21,12 +21,26 @@ export interface PlotStyle {
   legend?: LegendLayout
   /** PL horizontal axis mode (nm / eV). */
   axisMode?: AxisMode
-  /** Raman excitation wavelength (nm). */
+  /** Raman excitation wavelength (nm). Used only when ramanInput = 'nm'. */
   laserNm?: number
+  /**
+   * What the Raman X data already is: 'cm' = Raman shift cm⁻¹ (plotted as-is),
+   * 'nm' = scattered wavelength to convert via the laser. Default 'cm'.
+   */
+  ramanInput?: 'cm' | 'nm'
   /** Normalize each trace to its max. */
   normalize?: boolean
   /** Baseline correction applied before normalize / fit / plot. */
   baselineMode?: BaselineMode
+
+  /** Manual axis bounds in the current plot coordinate space. Undefined = auto. */
+  xMin?: number
+  xMax?: number
+  yMin?: number
+  yMax?: number
+  /** Logarithmic axis scales (else linear). */
+  xLog?: boolean
+  yLog?: boolean
 
   /** FP cavity length (µm). */
   fpL?: number
@@ -38,6 +52,12 @@ export interface PlotStyle {
   /** Editable formula constants (calibration). */
   hcEvNm?: number // E = hc / λ
   ramanK?: number // Δν = ramanK · (1/λ_L − 1/λ)
+
+  /** Raman strain readout: bulk references + biaxial strain-shift coefficients. */
+  strainSiRef?: number
+  strainGeRef?: number
+  strainSiCoef?: number
+  strainGeCoef?: number
 }
 
 export const IGOR_PRESET: PlotStyle = {

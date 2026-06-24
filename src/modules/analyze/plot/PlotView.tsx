@@ -19,6 +19,17 @@ export interface PlotViewProps {
   style: PlotStyle
   xLog?: boolean
   yLog?: boolean
+  /** Manual axis bounds (current plot coords). Undefined = auto for that bound. */
+  xMin?: number
+  xMax?: number
+  yMin?: number
+  yMax?: number
+  /**
+   * Reports the autoscale domain actually drawn (after nice-rounding) whenever it
+   * changes, so callers can seed manual bounds to exactly match the shown axis.
+   * Must be a stable callback.
+   */
+  onAutoDomain?: (x: [number, number], y: [number, number]) => void
   /** Free-placed legend. */
   legend?: LegendLayout
   /** Called while the user drags / resizes the legend. */
@@ -110,6 +121,16 @@ function formatTick(v: number): string {
   return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed
 }
 
+// On a log axis d3 returns every 1–9 minor tick per decade; labelling them all
+// collides. Label only the majors: powers of ten (and ×2, ×5 when the span is
+// narrow), leaving the rest as unlabelled minor tick marks.
+function logLabeled(v: number, decades: number): boolean {
+  if (!(v > 0)) return false
+  const mantissa = Math.round(v / Math.pow(10, Math.floor(Math.log10(v) + 1e-9)))
+  if (decades > 3) return mantissa === 1
+  return mantissa === 1 || mantissa === 2 || mantissa === 5
+}
+
 const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotView(
   {
     traces,
@@ -118,6 +139,11 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     style,
     xLog = false,
     yLog = false,
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    onAutoDomain,
     legend = DEFAULT_LEGEND,
     onLegendChange,
     width = DEFAULT_WIDTH,
@@ -165,18 +191,71 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     for (const v of overlay.y) allY.push(v)
   }
 
-  const [xMin, xMax] = xLog ? positiveExtent(allX) : niceExtent(allX)
-  const [yMin, yMax] = yLog ? positiveExtent(allY) : niceExtent(allY)
+  const autoX = xLog ? positiveExtent(allX) : niceExtent(allX)
+  const autoY = yLog ? positiveExtent(allY) : niceExtent(allY)
 
+  // The autoscale domain AS DRAWN: linear axes are nice-rounded by the scale
+  // (log axes aren't). Report it so manual bounds can seed to the shown axis.
+  const shownX = xLog
+    ? autoX
+    : (scaleLinear().domain(autoX).nice().domain() as [number, number])
+  const shownY = yLog
+    ? autoY
+    : (scaleLinear().domain(autoY).nice().domain() as [number, number])
+  React.useEffect(() => {
+    onAutoDomain?.([shownX[0], shownX[1]], [shownY[0], shownY[1]])
+    // Depend on primitives so this fires only when the drawn auto domain changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownX[0], shownX[1], shownY[0], shownY[1], onAutoDomain])
+
+  // Apply any manual bounds (partial allowed); fall back to auto if a manual
+  // domain ends up invalid (min ≥ max, non-finite).
+  const resolve = (
+    auto: [number, number],
+    lo: number | undefined,
+    hi: number | undefined,
+    log: boolean,
+  ): { domain: [number, number]; manual: boolean } => {
+    // A bound counts only if finite (and positive on a log axis).
+    const okLo = Number.isFinite(lo) && (!log || (lo as number) > 0)
+    const okHi = Number.isFinite(hi) && (!log || (hi as number) > 0)
+    const manual = okLo || okHi
+    const d: [number, number] = [
+      okLo ? (lo as number) : auto[0],
+      okHi ? (hi as number) : auto[1],
+    ]
+    if (!(d[0] < d[1])) return { domain: auto, manual: false }
+    return { domain: d, manual }
+  }
+  const xR = resolve(autoX, xMin, xMax, xLog)
+  const yR = resolve(autoY, yMin, yMax, yLog)
+
+  // Exact bounds when the user set them; otherwise round to a nice extent.
   const xScale = xLog
-    ? scaleLog().domain([xMin, xMax]).range([0, plotSide])
-    : scaleLinear().domain([xMin, xMax]).nice().range([0, plotSide])
+    ? scaleLog().domain(xR.domain).range([0, plotSide])
+    : (() => {
+        const s = scaleLinear().domain(xR.domain)
+        if (!xR.manual) s.nice()
+        return s.range([0, plotSide])
+      })()
   const yScale = yLog
-    ? scaleLog().domain([yMin, yMax]).range([plotSide, 0])
-    : scaleLinear().domain([yMin, yMax]).nice().range([plotSide, 0])
+    ? scaleLog().domain(yR.domain).range([plotSide, 0])
+    : (() => {
+        const s = scaleLinear().domain(yR.domain)
+        if (!yR.manual) s.nice()
+        return s.range([plotSide, 0])
+      })()
 
   const xTicks = xScale.ticks(6)
   const yTicks = yScale.ticks(6)
+
+  // Tick labels: on log axes only the majors are labelled (minors stay as marks).
+  const xDecades = Math.log10(xR.domain[1] / Math.max(xR.domain[0], 1e-300))
+  const yDecades = Math.log10(yR.domain[1] / Math.max(yR.domain[0], 1e-300))
+  const xLabelFor = (v: number) =>
+    xLog && !logLabeled(v, xDecades) ? '' : formatTick(v)
+  const yLabelFor = (v: number) =>
+    yLog && !logLabeled(v, yDecades) ? '' : formatTick(v)
 
   const tickLen = Math.max(4, Math.round(style.fontSize * 0.35))
   const tickDir = style.tickInward ? -1 : 1 // inward = into the plotting area
@@ -360,7 +439,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
                 fontFamily={style.fontFamily}
                 fill={INK}
               >
-                {formatTick(tv)}
+                {xLabelFor(tv)}
               </text>
             </g>
           )
@@ -399,7 +478,7 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
                 fontFamily={style.fontFamily}
                 fill={INK}
               >
-                {formatTick(tv)}
+                {yLabelFor(tv)}
               </text>
             </g>
           )
