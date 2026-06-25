@@ -43,22 +43,14 @@ export function NumberField({
 }: NumberFieldProps) {
   const reactId = React.useId()
   const inputId = id ?? reactId
-
-  const [text, setText] = React.useState(() =>
-    Number.isFinite(value) ? String(value) : '',
-  )
-  const focused = React.useRef(false)
-
-  // Track external value changes while the field isn't being edited.
-  React.useEffect(() => {
-    if (!focused.current) {
-      setText(Number.isFinite(value) ? String(value) : '')
-    }
-  }, [value])
+  const displayValue = Number.isFinite(value) ? String(value) : ''
 
   return (
-    <div className={cn('flex flex-col gap-1.5', className)}>
-      <Label htmlFor={inputId} className="text-muted-foreground">
+    <div className={cn('flex flex-col gap-1', className)}>
+      <Label
+        htmlFor={inputId}
+        className="px-0.5 text-xs font-medium text-muted-foreground"
+      >
         {label}
       </Label>
       <div className="relative">
@@ -66,29 +58,20 @@ export function NumberField({
           id={inputId}
           type="text"
           inputMode="decimal"
-          value={text}
+          value={displayValue}
           step={step}
           min={min}
           max={max}
           disabled={disabled}
-          onFocus={() => {
-            focused.current = true
-          }}
           onChange={(e) => {
             const raw = e.target.value
-            setText(raw)
             const n = parseFloat(raw)
             if (Number.isFinite(n)) onChange(n)
           }}
-          onBlur={() => {
-            focused.current = false
-            // Snap the displayed text back to the committed numeric value.
-            setText(Number.isFinite(value) ? String(value) : '')
-          }}
-          className={cn('tnum', unit && 'pr-9')}
+          className={cn('h-9 rounded-lg px-3.5 text-[15px] tnum', unit && 'pr-12')}
         />
         {unit && (
-          <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs text-muted-foreground select-none">
+          <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-sm text-muted-foreground select-none">
             {unit}
           </span>
         )}

@@ -3,8 +3,10 @@
 import * as React from 'react'
 import { FileImage, FileDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { downloadBlob } from '@/lib/download'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/components/app/I18nProvider'
 import { exportPng } from '../plot/export'
 import { buildPxp } from '../pxp-export'
 import type { PxpExportOptions } from '../pxp-export'
@@ -28,38 +30,32 @@ export function ExportButtons({
   disabled,
   className,
 }: ExportButtonsProps) {
+  const { t } = useI18n()
   const handlePng = React.useCallback(async () => {
     const svg = getSvg()
     if (!svg) return
     try {
       await exportPng(svg, `${baseName}.png`, 2)
-      toast.success('PNG を書き出しました')
+      toast.success(t('analyze.pngExported'))
     } catch {
-      toast.error('PNG の書き出しに失敗しました')
+      toast.error(t('analyze.pngExportFailed'))
     }
-  }, [getSvg, baseName])
+  }, [getSvg, baseName, t])
 
   const handlePxp = React.useCallback(() => {
     const traces = getTraces?.() ?? []
     if (traces.length === 0) {
-      toast.error('書き出すトレースがありません')
+      toast.error(t('analyze.noExportTraces'))
       return
     }
     try {
       const blob = buildPxp(traces, getPxpOptions?.())
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${baseName}.pxp`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-      toast.success(`${traces.length} 波形を .pxp で書き出しました`)
+      downloadBlob(blob, `${baseName}.pxp`)
+      toast.success(t('analyze.pxpExported', { count: traces.length }))
     } catch {
-      toast.error('.pxp の書き出しに失敗しました')
+      toast.error(t('analyze.pxpExportFailed'))
     }
-  }, [getTraces, getPxpOptions, baseName])
+  }, [getTraces, getPxpOptions, baseName, t])
 
   return (
     <div className={cn('grid grid-cols-2 gap-2', className)}>
@@ -68,7 +64,7 @@ export function ExportButtons({
         size="sm"
         onClick={() => void handlePng()}
         disabled={disabled}
-        title="PNG出力"
+        title={t('analyze.pngTitle')}
       >
         <FileImage />
         PNG
@@ -78,7 +74,7 @@ export function ExportButtons({
         size="sm"
         onClick={handlePxp}
         disabled={disabled || !getTraces}
-        title="Igor .pxp 出力"
+        title={t('analyze.pxpTitle')}
       >
         <FileDown />
         Igor .pxp

@@ -30,12 +30,10 @@ export function parseSpectrumText(
 
 export async function parseFiles(files: File[] | FileList): Promise<Trace[]> {
   const list = Array.from(files)
-  const traces: Trace[] = []
-  for (let i = 0; i < list.length; i++) {
-    const file = list[i]
+  return Promise.all(list.map(async (file, i) => {
     const text = await file.text()
     const { x, y, name } = parseSpectrumText(text, file.name)
-    traces.push({
+    return {
       id: `${name}-${i}`,
       name,
       x,
@@ -43,7 +41,6 @@ export async function parseFiles(files: File[] | FileList): Promise<Trace[]> {
       color: TRACE_COLORS[i % TRACE_COLORS.length],
       visible: true,
       lineWidth: DEFAULT_LINE_WIDTH,
-    })
-  }
-  return traces
+    }
+  }))
 }

@@ -127,7 +127,7 @@ function TraceRow({
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">線幅</Label>
+              <span className="text-xs font-medium">線幅</span>
               <span className="tnum text-xs text-muted-foreground">
                 {lw.toFixed(1)}
               </span>
@@ -243,9 +243,9 @@ export function TraceList({
           />
         ))}
       </Reorder.Group>
-      <div aria-live="polite" role="status" className="sr-only">
+      <output aria-live="polite" className="sr-only">
         {liveMsg}
-      </div>
+      </output>
     </>
   )
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { NuqsAdapter } from 'nuqs/adapters/next/app'
+import { Suspense } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import './globals.css'
 import { Geist } from "next/font/google";
@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ServiceWorkerRegister } from '@/components/app/ServiceWorkerRegister'
+import { I18nProvider } from '@/components/app/I18nProvider'
+import { WebMcpRegister } from '@/components/app/WebMcpRegister'
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -19,8 +21,16 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
   },
   icons: {
-    icon: '/icon-192.png',
-    apple: '/icon-192.png',
+    icon: [
+      { url: '/nanoverse-icon.png?v=nanoverse-icon-20260625', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      {
+        url: '/nanoverse-icon.png?v=nanoverse-icon-20260625',
+        sizes: '512x512',
+        type: 'image/png',
+      },
+    ],
   },
 }
 
@@ -40,12 +50,15 @@ export default function RootLayout({
     <html lang="ja" className={cn("font-sans", geist.variable)}>
       <body>
         <TooltipProvider>
-          <NuqsAdapter>
+          <I18nProvider>
             <AppShell>{children}</AppShell>
-          </NuqsAdapter>
+          </I18nProvider>
         </TooltipProvider>
         <Toaster />
         <ServiceWorkerRegister />
+        <Suspense fallback={null}>
+          <WebMcpRegister />
+        </Suspense>
       </body>
     </html>
   )

@@ -275,9 +275,12 @@ function buildExportTraces(
   commonXName: string | null
   commonX: number[] | null
 } {
-  const usable = traces
-    .filter((t) => t.x.length === t.y.length && t.y.length >= 2)
-    .map((t) => sanitizeTraceForDisplayAxes(t, options))
+  const usable: Trace[] = []
+  for (const trace of traces) {
+    if (trace.x.length === trace.y.length && trace.y.length >= 2) {
+      usable.push(sanitizeTraceForDisplayAxes(trace, options))
+    }
+  }
   const used = new Set<string>()
   if (usable.length === 0) {
     return { exportTraces: [], commonXName: null, commonX: null }
@@ -372,9 +375,12 @@ function legendPosition(
   exportTraces: ExportTrace[],
   legend: LegendLayout,
 ): { x: number; y: number } {
-  const labels = exportTraces
-    .filter((t) => t.includeInLegend)
-    .map((t) => asciiIgorText(t.trace.name, t.yName))
+  const labels: string[] = []
+  for (const trace of exportTraces) {
+    if (trace.includeInLegend) {
+      labels.push(asciiIgorText(trace.trace.name, trace.yName))
+    }
+  }
   const fontSize = Math.max(8, Math.round(25 * legend.scale))
   const boxW =
     labels.length > 0
@@ -403,10 +409,13 @@ function recreationRecord(
   const yLabel = escapeIgorString(options.yLabel ?? 'Intensity (a.u.)', 'Intensity (a.u.)')
   const legend = options.legend ?? DEFAULT_LEGEND
   const legendSize = Math.max(8, Math.round(25 * legend.scale))
-  const legendEntries = exportTraces.filter((t) => t.includeInLegend).map((t) => {
-    const label = escapeIgorString(t.trace.name, t.yName)
-    return `\\s(${macroName(t.yName)}) ${label}`
-  })
+  const legendEntries: string[] = []
+  for (const trace of exportTraces) {
+    if (trace.includeInLegend) {
+      const label = escapeIgorString(trace.trace.name, trace.yName)
+      legendEntries.push(`\\s(${macroName(trace.yName)}) ${label}`)
+    }
+  }
   const legendPos = legendPosition(exportTraces, legend)
   const legendText = `\\Z${legendSize}${legendEntries.join('\\r')}`
   const lines = [

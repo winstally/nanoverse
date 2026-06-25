@@ -22,6 +22,8 @@ const rectShapeSchema = z.object({
   w: z.number(),
   h: z.number(),
   rotationDeg: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 })
 
 const ellipseShapeSchema = z.object({
@@ -31,6 +33,9 @@ const ellipseShapeSchema = z.object({
   y: z.number(),
   w: z.number(),
   h: z.number(),
+  rotationDeg: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 })
 
 const textShapeSchema = z.object({
@@ -41,6 +46,9 @@ const textShapeSchema = z.object({
   text: z.string(),
   heightUm: z.number(),
   fontFamily: z.string().optional(),
+  rotationDeg: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 })
 
 const lineSpaceShapeSchema = z.object({
@@ -54,6 +62,8 @@ const lineSpaceShapeSchema = z.object({
   orientation: z.enum(['horizontal', 'vertical']),
   lengthUm: z.number(),
   rotationDeg: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 })
 
 const gridShapeSchema = z.object({
@@ -66,6 +76,8 @@ const gridShapeSchema = z.object({
   cols: z.number(),
   rows: z.number(),
   rotationDeg: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 })
 
 export const shapeSchema = z.discriminatedUnion('kind', [
@@ -78,15 +90,17 @@ export const shapeSchema = z.discriminatedUnion('kind', [
 
 // ── Mask document ─────────────────────────────────────────────────────────────
 
-export const polaritySchema = z.enum(['darkOnLight', 'lightOnDark'])
+const polaritySchema = z.enum(['darkOnLight', 'lightOnDark'])
+const maskTargetSchema = z.enum(['bmp', 'gds'])
 
-export const maskDocumentSchema = z.object({
+const maskDocumentSchema = z.object({
   id: z.string(),
   name: z.string(),
   widthUm: z.number().positive(), // authority for all geometry; reject corrupt 0/negative
   heightUm: z.number(),
-  magnification: z.number().positive().optional().catch(undefined),
-  umPerCm: z.number().positive().optional().catch(undefined),
+  magnification: z.number().positive(),
+  umPerCm: z.number().positive(),
+  target: maskTargetSchema,
   shapes: z.array(shapeSchema),
   polarity: polaritySchema,
   updatedAt: z.number().optional(),
@@ -146,7 +160,7 @@ export const plotStyleSchema = z.object({
 
 // ── Analyze session ───────────────────────────────────────────────────────────
 
-export const analyzeSessionSchema = z.object({
+const analyzeSessionSchema = z.object({
   id: z.string(),
   name: z.string(),
   traces: z.array(traceSchema),

@@ -9,7 +9,7 @@
  * Data lives in IndexedDB (untouched here) and persists independently.
  */
 
-const CACHE = 'nanoverse-v1'
+const CACHE = 'nanoverse-v8'
 const PRECACHE = ['/', '/mask', '/analyze']
 
 self.addEventListener('install', (event) => {
@@ -31,9 +31,12 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys()
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-      await self.clients.claim()
+      const [keys] = await Promise.all([caches.keys()])
+      const deletes = []
+      for (const key of keys) {
+        if (key !== CACHE) deletes.push(caches.delete(key))
+      }
+      await Promise.all([...deletes, self.clients.claim()])
     })(),
   )
 })

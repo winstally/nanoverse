@@ -1,9 +1,9 @@
 'use client'
 
 import * as React from 'react'
-import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { FileDropzone } from '@/components/app/FileDropzone'
+import { useI18n } from '@/components/app/I18nProvider'
 import { parseFiles } from '../parse'
 import { parsePxpFile } from '../pxp'
 import type { MeasurementType, Trace } from '../types'
@@ -16,14 +16,11 @@ export interface FileDropProps {
 }
 
 export function FileDrop({ onTraces, onType, className }: FileDropProps) {
-  const [dragging, setDragging] = React.useState(false)
+  const { t } = useI18n()
   const [busy, setBusy] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
 
   const ingest = React.useCallback(
-    async (files: FileList | File[] | null) => {
-      if (!files) return
-      const list = Array.from(files)
+    async (list: File[]) => {
       if (list.length === 0) return
       setBusy(true)
       try {
@@ -31,79 +28,49 @@ export function FileDrop({ onTraces, onType, className }: FileDropProps) {
         let detectedType: MeasurementType | null = null
         let skipped = 0
         // Igor .pxp imports primary plotted waves (X + Y), txt parses 2 columns.
-        for (const f of list.filter((f) => /\.pxp$/i.test(f.name))) {
-          const r = await parsePxpFile(f)
+        const pxps: File[] = []
+        const txts: File[] = []
+        for (const file of list) {
+          if (/\.pxp$/i.test(file.name)) pxps.push(file)
+          else txts.push(file)
+        }
+        const pxpResults = await Promise.all(pxps.map((file) => parsePxpFile(file)))
+        for (const r of pxpResults) {
           all.push(...r.traces)
           skipped += r.skipped
           if (!detectedType && r.type) detectedType = r.type
         }
-        const txts = list.filter((f) => !/\.pxp$/i.test(f.name))
         if (txts.length > 0) all.push(...(await parseFiles(txts)))
 
         const usable = all.filter((t) => t.x.length > 0)
         if (usable.length === 0) {
-          toast.error('データを読み取れませんでした')
+          toast.error(t('analyze.fileReadFailed'))
           return
         }
         onTraces(usable)
         if (detectedType) onType?.(detectedType)
         toast.success(
-          `${usable.length} 件のスペクトルを読み込みました` +
-            (skipped > 0 ? `（${skipped} 件はX軸不一致でスキップ）` : ''),
+          t('analyze.filesImported', { count: usable.length }) +
+            (skipped > 0 ? t('analyze.filesSkipped', { count: skipped }) : ''),
         )
       } catch {
-        toast.error('ファイルの読み込みに失敗しました')
+        toast.error(t('analyze.fileImportFailed'))
       } finally {
         setBusy(false)
       }
     },
-    [onTraces, onType],
+    [onTraces, onType, t],
   )
 
   return (
-    <div className={className}>
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault()
-          setDragging(false)
-        }}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          void ingest(e.dataTransfer.files)
-        }}
-        className={cn(
-          'flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed px-3 py-6 text-center transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
-          dragging
-            ? 'border-primary bg-muted'
-            : 'border-border bg-card hover:bg-muted',
-        )}
-      >
-        <Upload size={20} className="text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">
-          {busy ? '読み込み中…' : 'txt / pxp をドロップ / クリック'}
-        </span>
-        <span className="text-[10px] text-muted-foreground">
-          .txt / Igor .pxp 複数可
-        </span>
-      </button>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".txt,.pxp,text/plain"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          void ingest(e.target.files)
-          e.target.value = ''
-        }}
-      />
-    </div>
+    <FileDropzone
+      className={className}
+      label={t('analyze.fileDropLabel')}
+      hint={t('analyze.fileDropHint')}
+      accept=".txt,.pxp,text/plain"
+      multiple
+      busy={busy}
+      onFiles={ingest}
+    />
   )
 }

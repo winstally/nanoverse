@@ -1,3 +1,5 @@
+import { downloadBlob } from '@/lib/download'
+
 function serializeSvg(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
   // Strip UI-only chrome (e.g. the legend resize handle) from exports.
@@ -9,26 +11,6 @@ function serializeSvg(svg: SVGSVGElement): string {
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   }
   return new XMLSerializer().serializeToString(clone)
-}
-
-function triggerDownload(url: string, filename: string): void {
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-}
-
-export function exportSvg(svg: SVGSVGElement, filename: string): void {
-  const source = serializeSvg(svg)
-  const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  try {
-    triggerDownload(url, filename)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
 }
 
 export async function exportPng(
@@ -79,12 +61,7 @@ export async function exportPng(
     })
     if (!pngBlob) throw new Error('Failed to encode PNG')
 
-    const pngUrl = URL.createObjectURL(pngBlob)
-    try {
-      triggerDownload(pngUrl, filename)
-    } finally {
-      URL.revokeObjectURL(pngUrl)
-    }
+    downloadBlob(pngBlob, filename)
   } finally {
     URL.revokeObjectURL(svgUrl)
   }

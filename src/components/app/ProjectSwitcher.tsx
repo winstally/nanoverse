@@ -10,6 +10,14 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { AutosaveStatus } from '@/hooks/use-autosave'
 
@@ -53,7 +61,20 @@ export function ProjectSwitcher({
   className,
 }: ProjectSwitcherProps) {
   const [open, setOpen] = React.useState(false)
+  const [pendingDelete, setPendingDelete] =
+    React.useState<ProjectSwitcherItem | null>(null)
   const statusText = STATUS_LABEL[status]
+
+  function requestDelete(item: ProjectSwitcherItem) {
+    setPendingDelete(item)
+    setOpen(false)
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return
+    onDelete(pendingDelete.id)
+    setPendingDelete(null)
+  }
 
   return (
     <div className={cn('flex items-center gap-1.5', className)}>
@@ -114,12 +135,12 @@ export function ProjectSwitcher({
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon-xs"
+                      size="icon-sm"
                       aria-label={`${item.name} を削除`}
                       className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => onDelete(item.id)}
+                      onClick={() => requestDelete(item)}
                     >
-                      <Trash2 />
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 )
@@ -140,6 +161,30 @@ export function ProjectSwitcher({
           </button>
         </PopoverContent>
       </Popover>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingDelete(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>プロジェクトを削除しますか？</DialogTitle>
+            <DialogDescription>
+              「{pendingDelete?.name ?? ''}」を削除します。この操作は取り消せません。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              キャンセル
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              削除する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {statusText && (
         <span

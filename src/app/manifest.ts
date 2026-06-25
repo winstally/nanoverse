@@ -17,19 +17,13 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'ja',
     icons: [
       {
-        src: '/icon-192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/icon-512.png',
+        src: '/nanoverse-icon.png?v=nanoverse-icon-20260625',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icon-maskable-512.png',
+        src: '/nanoverse-icon.png?v=nanoverse-icon-20260625',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

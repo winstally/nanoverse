@@ -1,26 +1,22 @@
 'use client'
 
 import * as React from 'react'
-import { PrimaryRail } from './PrimaryRail'
 
 /**
- * App frame: the Primary Rail plus the page region. The page region is left to
- * `ToolLayout`, which renders the control panel as a sidebar (blended into this
- * frame background) and wraps only the work surface in a white card — matching
- * photoverse's "flush" layout where the sidebar sits outside the card.
+ * App frame background. Tool pages own the photoverse-style primary rail,
+ * animated sidebar, and white work-surface card through `ToolLayout`.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="flex h-[100dvh] w-full gap-1.5 overflow-hidden bg-bg p-1.5"
+      className="flex h-[100dvh] w-full overflow-hidden bg-white p-[3px] lg:p-0"
       style={{
-        paddingLeft: 'max(0.375rem, env(safe-area-inset-left))',
-        paddingRight: 'max(0.375rem, env(safe-area-inset-right))',
-        paddingTop: 'max(0.375rem, env(safe-area-inset-top))',
-        paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(3px, env(safe-area-inset-left))',
+        paddingRight: 'max(3px, env(safe-area-inset-right))',
+        paddingTop: 'max(3px, env(safe-area-inset-top))',
+        paddingBottom: 'max(3px, env(safe-area-inset-bottom))',
       }}
     >
-      <PrimaryRail />
       {children}
     </div>
   )

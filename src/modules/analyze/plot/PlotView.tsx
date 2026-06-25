@@ -25,12 +25,6 @@ export interface PlotViewProps {
   xMax?: number
   yMin?: number
   yMax?: number
-  /**
-   * Reports the autoscale domain actually drawn (after nice-rounding) whenever it
-   * changes, so callers can seed manual bounds to exactly match the shown axis.
-   * Must be a stable callback.
-   */
-  onAutoDomain?: (x: [number, number], y: [number, number]) => void
   /** Free-placed legend. */
   legend?: LegendLayout
   /** Called while the user drags / resizes the legend. */
@@ -48,6 +42,7 @@ export interface PlotViewProps {
   verticalLines?: number[]
   /** Legend label for the vertical marker lines (e.g. "FP共振"). */
   verticalLineLabel?: string
+  ref?: React.Ref<SVGSVGElement>
 }
 
 // Muted fit-curve overlay fallback (ink-2). The publication plot's data/axes
@@ -103,39 +98,26 @@ function logLabeled(v: number, decades: number): boolean {
   return mantissa === 1 || mantissa === 2 || mantissa === 5
 }
 
-const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotView(
-  {
-    traces,
-    xLabel,
-    yLabel = 'Intensity',
-    style,
-    xLog = false,
-    yLog = false,
-    xMin,
-    xMax,
-    yMin,
-    yMax,
-    onAutoDomain,
-    legend = DEFAULT_LEGEND,
-    onLegendChange,
-    width = DEFAULT_WIDTH,
-    height = DEFAULT_HEIGHT,
-    overlay,
-    verticalLines,
-    verticalLineLabel,
-  },
+function usePlotViewSvg({
+  traces,
+  xLabel,
+  yLabel = 'Intensity',
+  style,
+  xLog = false,
+  yLog = false,
+  xMin,
+  xMax,
+  yMin,
+  yMax,
+  legend = DEFAULT_LEGEND,
+  onLegendChange,
+  width = DEFAULT_WIDTH,
+  height = DEFAULT_HEIGHT,
+  overlay,
+  verticalLines,
+  verticalLineLabel,
   ref,
-) {
-  const innerRef = React.useRef<SVGSVGElement | null>(null)
-  const setSvg = React.useCallback(
-    (el: SVGSVGElement | null) => {
-      innerRef.current = el
-      if (typeof ref === 'function') ref(el)
-      else if (ref) (ref as React.MutableRefObject<SVGSVGElement | null>).current = el
-    },
-    [ref],
-  )
-
+}: PlotViewProps) {
   const visible = traces.filter((t) => t.visible && t.x.length > 0)
   const hasOverlay = !!overlay && overlay.x.length > 0 && overlay.y.length > 0
   const margins = computeMargins(style)
@@ -161,13 +143,6 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     yMin,
     yMax,
   })
-  const shownX = domains.shownX
-  const shownY = domains.shownY
-  React.useEffect(() => {
-    onAutoDomain?.([shownX[0], shownX[1]], [shownY[0], shownY[1]])
-    // Depend on primitives so this fires only when the drawn auto domain changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownX[0], shownX[1], shownY[0], shownY[1], onAutoDomain])
 
   const xR = domains.x
   const yR = domains.y
@@ -269,8 +244,11 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     start: LegendLayout
   } | null>(null)
 
-  const toPlot = (e: React.PointerEvent): { x: number; y: number } => {
-    const svg = innerRef.current
+  const toPlot = React.useCallback((e: React.PointerEvent): { x: number; y: number } => {
+    const current = e.currentTarget as SVGElement
+    const svg =
+      current.ownerSVGElement ??
+      (current instanceof SVGSVGElement ? current : null)
     if (!svg) return { x: 0, y: 0 }
     const rect = svg.getBoundingClientRect()
     const sx = rect.width > 0 ? svgW / rect.width : 1
@@ -279,9 +257,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
       x: (e.clientX - rect.left) * sx - margins.left,
       y: (e.clientY - rect.top) * sy - margins.top,
     }
-  }
+  }, [margins.left, margins.top, svgH, svgW])
 
-  const beginDrag = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
+  const beginDrag = React.useCallback((mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (!onLegendChange) return
     e.stopPropagation()
     try {
@@ -291,9 +269,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
     }
     const p = toPlot(e)
     dragRef.current = { mode, startX: p.x, startY: p.y, start: legend }
-  }
+  }, [legend, onLegendChange, toPlot])
 
-  const onDragMove = (e: React.PointerEvent) => {
+  const onDragMove = React.useCallback((e: React.PointerEvent) => {
     const d = dragRef.current
     if (!d || !onLegendChange) return
     const p = toPlot(e)
@@ -309,9 +287,9 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
         scale: clamp(d.start.scale + (p.x - d.startX) / 180, 0.5, 3),
       })
     }
-  }
+  }, [maxXFrac, maxYFrac, onLegendChange, plotSide, toPlot])
 
-  const endDrag = (e: React.PointerEvent) => {
+  const endDrag = React.useCallback((e: React.PointerEvent) => {
     if (dragRef.current) {
       try {
         ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
@@ -320,14 +298,14 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
       }
       dragRef.current = null
     }
-  }
+  }, [])
 
   const interactive = !!onLegendChange
   const handleSize = Math.max(7, legendFs * 0.42)
 
   return (
     <svg
-      ref={setSvg}
+      ref={ref}
       id="plot-svg"
       xmlns="http://www.w3.org/2000/svg"
       width={svgW}
@@ -598,6 +576,10 @@ const PlotView = React.forwardRef<SVGSVGElement, PlotViewProps>(function PlotVie
       </text>
     </svg>
   )
-})
+}
+
+function PlotView(props: PlotViewProps) {
+  return usePlotViewSvg(props)
+}
 
 export default PlotView

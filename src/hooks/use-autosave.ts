@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -13,6 +13,27 @@ export interface UseAutosaveResult {
 export interface UseAutosaveOptions {
   /** Debounce delay in ms before saving. Default 800. */
   delay?: number
+}
+
+type AutosaveState = Pick<UseAutosaveResult, 'status' | 'savedAt'>
+
+type AutosaveAction =
+  | { type: 'saving' }
+  | { type: 'saved'; savedAt: number }
+  | { type: 'error' }
+
+function autosaveReducer(
+  state: AutosaveState,
+  action: AutosaveAction,
+): AutosaveState {
+  switch (action.type) {
+    case 'saving':
+      return { ...state, status: 'saving' }
+    case 'saved':
+      return { status: 'saved', savedAt: action.savedAt }
+    case 'error':
+      return { ...state, status: 'error' }
+  }
 }
 
 /**
@@ -29,8 +50,10 @@ export function useAutosave<T>(
 ): UseAutosaveResult {
   const delay = opts?.delay ?? 800
 
-  const [status, setStatus] = useState<AutosaveStatus>('idle')
-  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [state, dispatch] = useReducer(autosaveReducer, {
+    status: 'idle',
+    savedAt: null,
+  })
 
   // Keep the latest save callback without retriggering the debounce effect when it changes.
   const saveRef = useRef(save)
@@ -52,22 +75,21 @@ export function useAutosave<T>(
 
     const handle = setTimeout(() => {
       const runId = ++runIdRef.current
-      setStatus('saving')
+      dispatch({ type: 'saving' })
       saveRef
         .current(value)
         .then(() => {
           if (runId !== runIdRef.current) return
-          setStatus('saved')
-          setSavedAt(Date.now())
+          dispatch({ type: 'saved', savedAt: Date.now() })
         })
         .catch(() => {
           if (runId !== runIdRef.current) return
-          setStatus('error')
+          dispatch({ type: 'error' })
         })
     }, delay)
 
     return () => clearTimeout(handle)
   }, [value, delay])
 
-  return { status, savedAt }
+  return state
 }

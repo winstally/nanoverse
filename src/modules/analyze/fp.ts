@@ -314,9 +314,11 @@ function findPeaks(
   if (candidates.length === 0) return []
 
   // 2. Prominence filter (scipy peak_prominences with full window).
-  const keptProm = candidates
-    .map((p) => ({ p, prom: peakProminence(y, p) }))
-    .filter((o) => o.prom >= prominence)
+  const keptProm: { p: number; prom: number }[] = []
+  for (const p of candidates) {
+    const prom = peakProminence(y, p)
+    if (prom >= prominence) keptProm.push({ p, prom })
+  }
 
   // 3. Minimum-distance selection (scipy: keep highest peaks first, remove
   //    neighbours within `distance`).
@@ -344,7 +346,11 @@ function findPeaks(
         nb++
       }
     }
-    return keptProm.filter((_, idx) => keepFlag[idx]).map((o) => o.p)
+    const selected: number[] = []
+    for (let idx = 0; idx < keptProm.length; idx++) {
+      if (keepFlag[idx]) selected.push(keptProm[idx].p)
+    }
+    return selected
   }
   return keptProm.map((o) => o.p)
 }

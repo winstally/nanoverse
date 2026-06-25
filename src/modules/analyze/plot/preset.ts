@@ -60,7 +60,7 @@ export interface PlotStyle {
   strainGeCoef?: number
 }
 
-export const IGOR_PRESET: PlotStyle = {
+const IGOR_PRESET: PlotStyle = {
   mirror: true,
   tickInward: true,
   axisThickness: 2,

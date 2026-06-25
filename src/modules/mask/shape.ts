@@ -11,6 +11,8 @@ export interface RectShape {
   w: number
   h: number
   rotationDeg?: number
+  flipX?: boolean
+  flipY?: boolean
 }
 
 export interface EllipseShape {
@@ -20,6 +22,9 @@ export interface EllipseShape {
   y: number
   w: number
   h: number
+  rotationDeg?: number
+  flipX?: boolean
+  flipY?: boolean
 } // x,y,w,h = bounding box
 
 export interface TextShape {
@@ -30,6 +35,9 @@ export interface TextShape {
   text: string
   heightUm: number
   fontFamily?: string
+  rotationDeg?: number
+  flipX?: boolean
+  flipY?: boolean
 }
 
 export interface LineSpaceShape {
@@ -43,6 +51,8 @@ export interface LineSpaceShape {
   orientation: 'horizontal' | 'vertical'
   lengthUm: number
   rotationDeg?: number
+  flipX?: boolean
+  flipY?: boolean
 }
 
 export interface GridShape {
@@ -55,6 +65,8 @@ export interface GridShape {
   cols: number // vertical lines
   rows: number // horizontal lines
   rotationDeg?: number
+  flipX?: boolean
+  flipY?: boolean
 }
 
 export type Shape =

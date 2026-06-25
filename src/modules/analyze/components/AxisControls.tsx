@@ -64,7 +64,7 @@ export function AxisControls({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">測定</Label>
+        <span className="text-sm font-medium text-muted-foreground">測定</span>
         <ToggleGroup
           variant="outline"
           size="sm"
@@ -91,7 +91,7 @@ export function AxisControls({
 
       {type === 'PL' && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground">横軸</Label>
+          <span className="text-sm font-medium text-muted-foreground">横軸</span>
           <ToggleGroup
             variant="outline"
             size="sm"
@@ -117,7 +117,7 @@ export function AxisControls({
       {type === 'Raman' && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground">横軸データ</Label>
+            <span className="text-sm font-medium text-muted-foreground">横軸データ</span>
             <ToggleGroup
               variant="outline"
               size="sm"
@@ -178,7 +178,7 @@ export function AxisControls({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">ベースライン補正</Label>
+        <span className="text-sm font-medium text-muted-foreground">ベースライン補正</span>
         <Select
           items={BASELINE_OPTIONS}
           value={baselineMode}

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { SquareActivity, FileDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { downloadBlob } from '@/lib/download'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -62,21 +63,14 @@ export function PeakPanel({
     if (results.length === 0) return
     const csv = toCsv(results, xUnit)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'peaks.csv'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, 'peaks.csv')
     toast.success('CSV を書き出しました')
   }, [results, xUnit])
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">モデル</Label>
+        <span className="text-sm font-medium text-muted-foreground">モデル</span>
         <ToggleGroup
           variant="outline"
           size="sm"
@@ -137,7 +131,7 @@ export function PeakPanel({
               <tbody>
                 {results.map((r, i) => (
                   <tr
-                    key={i}
+                    key={`${r.center}-${r.fwhm}-${r.amplitude}-${r.area}`}
                     className={cn(
                       'tnum border-t border-border text-right text-foreground',
                       i % 2 === 1 && 'bg-muted/50',

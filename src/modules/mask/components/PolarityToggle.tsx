@@ -1,8 +1,8 @@
 'use client'
 
-import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Polarity } from '@/modules/mask/document'
+import { useI18n } from '@/components/app/I18nProvider'
 
 interface PolarityToggleProps {
   polarity: Polarity
@@ -16,9 +16,12 @@ export function PolarityToggle({
   onPolarityChange,
   className,
 }: PolarityToggleProps) {
+  const { t } = useI18n()
   return (
     <div className={className}>
-      <Label className="text-muted-foreground">極性</Label>
+      <span className="px-0.5 text-sm font-medium text-muted-foreground">
+        {t('mask.polarity')}
+      </span>
       <ToggleGroup
         value={[polarity]}
         onValueChange={(next) => {
@@ -27,24 +30,24 @@ export function PolarityToggle({
         }}
         variant="outline"
         spacing={0}
-        className="mt-1.5 grid w-full grid-cols-2"
-        aria-label="極性"
+        className="mt-2 grid w-full grid-cols-2"
+        aria-label={t('mask.polarity')}
       >
         <ToggleGroupItem
           value="darkOnLight"
-          aria-label="白地に黒"
+          aria-label={t('mask.polarity.darkOnLight')}
           className="gap-1.5 data-[state=on]:!bg-primary data-[state=on]:!text-primary-foreground"
         >
           <Swatch bg="#ffffff" fg="#090909" />
-          白地に黒
+          {t('mask.polarity.darkOnLight')}
         </ToggleGroupItem>
         <ToggleGroupItem
           value="lightOnDark"
-          aria-label="黒地に白"
+          aria-label={t('mask.polarity.lightOnDark')}
           className="gap-1.5 data-[state=on]:!bg-primary data-[state=on]:!text-primary-foreground"
         >
           <Swatch bg="#090909" fg="#ffffff" />
-          黒地に白
+          {t('mask.polarity.lightOnDark')}
         </ToggleGroupItem>
       </ToggleGroup>
     </div>

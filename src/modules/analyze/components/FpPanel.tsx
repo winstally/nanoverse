@@ -3,9 +3,9 @@
 import * as React from 'react'
 import { SquareActivity, FileDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { downloadBlob } from '@/lib/download'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import {
   Accordion,
   AccordionContent,
@@ -110,22 +110,28 @@ export function FpPanel({
     if (!fit) return
     const csv = toCsv(fit)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'fp_fit.csv'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, 'fp_fit.csv')
     toast.success('CSV を書き出しました')
   }, [fit])
 
   // Per-adjacent-pair group index — a consistency check on the continuous-mode
   // assumption (all values ≈ n_g,FP if no peak is missing / spurious).
-  const pairNg = fit ? fit.pairNg.filter((v) => Number.isFinite(v)) : []
-  const ngMin = pairNg.length ? Math.min(...pairNg) : NaN
-  const ngMax = pairNg.length ? Math.max(...pairNg) : NaN
+  const pairNg: { value: number; pairIndex: number }[] = []
+  let ngMin = Infinity
+  let ngMax = -Infinity
+  if (fit) {
+    for (let pairIndex = 0; pairIndex < fit.pairNg.length; pairIndex++) {
+      const value = fit.pairNg[pairIndex]
+      if (!Number.isFinite(value)) continue
+      pairNg.push({ value, pairIndex })
+      if (value < ngMin) ngMin = value
+      if (value > ngMax) ngMax = value
+    }
+  }
+  if (pairNg.length === 0) {
+    ngMin = NaN
+    ngMax = NaN
+  }
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
@@ -141,7 +147,7 @@ export function FpPanel({
       />
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">探索範囲</Label>
+        <span className="text-sm font-medium text-muted-foreground">探索範囲</span>
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="最小"
@@ -267,8 +273,12 @@ export function FpPanel({
                 value={`${fmt(ngMin, 3)}–${fmt(ngMax, 3)}`}
               />
               <div className="tnum flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                {pairNg.map((v, i) => (
-                  <span key={i}>{fmt(v, 3)}</span>
+                {pairNg.map(({ value, pairIndex }) => (
+                  <span
+                    key={`${fit.peaksNm[pairIndex] ?? 'start'}-${fit.peaksNm[pairIndex + 1] ?? 'end'}-${value}`}
+                  >
+                    {fmt(value, 3)}
+                  </span>
                 ))}
               </div>
               <p className="text-[11px] leading-relaxed text-muted-foreground">

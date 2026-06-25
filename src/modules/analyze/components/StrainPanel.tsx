@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { Label } from '@/components/ui/label'
 import { NumberField } from '@/components/app/NumberField'
 import {
   Select,
@@ -68,7 +67,7 @@ export function StrainPanel({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">基準（この試料からのシフト）</Label>
+        <span className="text-sm font-medium text-muted-foreground">基準（この試料からのシフト）</span>
         <Select
           items={refItems}
           value={refMode}
@@ -89,7 +88,7 @@ export function StrainPanel({
 
       {refMode === BULK_REF && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground">バルク基準位置</Label>
+          <span className="text-sm font-medium text-muted-foreground">バルク基準位置</span>
           <div className="grid grid-cols-2 gap-2">
             <NumberField
               label="Si–Si"
@@ -108,7 +107,7 @@ export function StrainPanel({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">歪み係数 |Δω/ε|</Label>
+        <span className="text-sm font-medium text-muted-foreground">歪み係数 |Δω/ε|</span>
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="Si"

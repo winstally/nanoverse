@@ -9,10 +9,6 @@ export const SLIDE_W_CM = 12188825 / 360000 // 33.858… (PowerPoint slide width
 export const DEFAULT_MAGNIFICATION = 20
 export const DEFAULT_UM_PER_CM = 14
 
-// Back-compat aliases.
-export const UM_PER_CM = DEFAULT_UM_PER_CM
-export const SUBSTRATE_W_UM = SLIDE_W_CM * DEFAULT_UM_PER_CM // ~474.0
-
 export interface Calibration {
   dmdW: number
   dmdH: number
@@ -26,14 +22,17 @@ export interface Calibration {
   substrateHUm: number
 }
 
-/**
- * Pixel pitch in µm/px. A maskless aligner projects the DMD through an objective
- * with uniform magnification, and the micromirrors are square, so one DMD pixel
- * maps to a physical *square*. There is a single pitch — it is isotropic by
- * construction; the field height follows from the DMD aspect ratio.
- */
+/** Horizontal layout pitch in µm/px for BMP rasterization. */
 export function umPerPx(cal: Calibration): number {
   return cal.substrateWUm / cal.dmdW
+}
+
+export function umPerPxX(cal: Calibration): number {
+  return cal.substrateWUm / cal.dmdW
+}
+
+export function umPerPxY(cal: Calibration): number {
+  return cal.substrateHUm / cal.dmdH
 }
 
 /** Field height (µm) that keeps pixels square for the given DMD + width anchor. */
@@ -73,8 +72,4 @@ export function defaultCalibration(): Calibration {
 
 export function umToPxX(cal: Calibration, uXum: number): number {
   return uXum / umPerPx(cal)
-}
-
-export function umToPxY(cal: Calibration, uYum: number): number {
-  return uYum / umPerPx(cal)
 }

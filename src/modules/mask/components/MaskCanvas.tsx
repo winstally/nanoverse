@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,6 +13,7 @@ import { Calibration } from '@/modules/mask/calibration'
 import { MaskDocument } from '@/modules/mask/document'
 import {
   EllipseShape,
+  GridShape,
   LineSpaceShape,
   MIN_UM,
   newId,
@@ -20,31 +22,48 @@ import {
   TextShape,
 } from '@/modules/mask/shape'
 import { renderToCanvas } from '@/modules/mask/renderer'
+import {
+  Box,
+  CornerHandle,
+  clamp,
+  countForSpan,
+  framePointsOf,
+  MIN_LINE_UM,
+  moveShapeBy,
+  patternSpan,
+  Point,
+  pointInShape,
+  resizeShapeFromCorner,
+  rotateShapeTo,
+  rotationOriginOf,
+  shapeBounds,
+  shapeRotationDeg,
+} from '@/modules/mask/geometry'
 import { Ruler, RULER_SIZE } from '@/modules/mask/components/Ruler'
 import { ToolKind } from '@/modules/mask/components/Toolbar'
 import type { ToolDefaults } from '@/modules/mask/tool-defaults'
+import { useI18n } from '@/components/app/I18nProvider'
 
-type HandleId = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w'
-
-interface Box {
-  x: number
-  y: number
-  w: number
-  h: number
-}
+type HandleId = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | 'rotate'
 
 interface DragState {
-  mode: 'create' | 'move' | 'resize'
+  mode: 'create' | 'move' | 'resize' | 'rotate'
   shapeId: string | null
   handle?: HandleId
+  originShape?: Shape
   /** pointer start in µm */
   startUmX: number
   startUmY: number
-  /** original box of the shape in µm */
+  /** original box of the shape in µm; local for resize, rendered bounds for move. */
   origin: Box
+  rotationOrigin?: Point
+  startAngleDeg?: number
+  startRotationDeg?: number
 }
 
 const HANDLE_PX = 8
+const PRIMARY_HANDLE_PX = 10
+const ROTATE_HANDLE_OFFSET_PX = 18
 /** Below this pointer travel (screen px) a create gesture counts as a click, not a drag. */
 const CLICK_PX = 4
 /** Selection-chrome accent (mirrors --color-accent). Not part of the mask artifact. */
@@ -61,65 +80,14 @@ interface MaskCanvasProps {
   onUpdate: (id: string, patch: Partial<Shape>) => void
   onDelete: (id: string) => void
   onToolChange: (tool: ToolKind) => void
+  onViewZoom: (tool: 'zoomIn' | 'zoomOut') => void
+  /** Multiplier applied on top of the automatic fit-to-view scale. */
+  viewZoom: number
   /** Called once when a move/resize gesture begins, to checkpoint undo history. */
   onBeginEdit?: () => void
 }
 
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(Math.max(v, lo), hi)
-}
-
-/** Bounding box of a shape, in µm. */
-function boundsOf(shape: Shape): Box {
-  switch (shape.kind) {
-    case 'rect':
-    case 'ellipse':
-      return { x: shape.x, y: shape.y, w: shape.w, h: shape.h }
-    case 'text': {
-      // approximate: width ~ 0.6 * height per char
-      const w = Math.max(shape.text.length, 1) * shape.heightUm * 0.6
-      return { x: shape.x, y: shape.y, w, h: shape.heightUm }
-    }
-    case 'lineSpace': {
-      const pitch = shape.lineWidthUm + shape.spaceUm
-      const span = shape.count * pitch - shape.spaceUm
-      if (shape.orientation === 'vertical') {
-        return { x: shape.x, y: shape.y, w: Math.max(span, MIN_UM), h: shape.lengthUm }
-      }
-      return { x: shape.x, y: shape.y, w: shape.lengthUm, h: Math.max(span, MIN_UM) }
-    }
-    case 'grid': {
-      const pitch = shape.lineWidthUm + shape.spaceUm
-      const w = (shape.cols - 1) * pitch + shape.lineWidthUm
-      const h = (shape.rows - 1) * pitch + shape.lineWidthUm
-      return {
-        x: shape.x,
-        y: shape.y,
-        w: Math.max(w, MIN_UM),
-        h: Math.max(h, MIN_UM),
-      }
-    }
-  }
-}
-
-function patchFromBox(shape: Shape, box: Box): Partial<Shape> {
-  switch (shape.kind) {
-    case 'rect':
-    case 'ellipse':
-      return { x: box.x, y: box.y, w: box.w, h: box.h }
-    case 'text':
-      return { x: box.x, y: box.y }
-    case 'lineSpace':
-      if (shape.orientation === 'vertical') {
-        return { x: box.x, y: box.y, lengthUm: Math.max(box.h, MIN_UM) }
-      }
-      return { x: box.x, y: box.y, lengthUm: Math.max(box.w, MIN_UM) }
-    case 'grid':
-      return { x: box.x, y: box.y }
-  }
-}
-
-export function MaskCanvas({
+function useMaskCanvasView({
   doc,
   cal,
   tool,
@@ -130,8 +98,11 @@ export function MaskCanvas({
   onUpdate,
   onDelete,
   onToolChange,
+  onViewZoom,
+  viewZoom,
   onBeginEdit,
 }: MaskCanvasProps) {
+  const { t } = useI18n()
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const offscreenRef = useRef<HTMLCanvasElement | null>(null)
@@ -146,13 +117,14 @@ export function MaskCanvas({
   const lengthUmY = cal.substrateHUm
 
   // Compute fit scale (screen px per µm), preserving the substrate aspect ratio.
-  const scale = useMemo(() => {
+  const fitScale = useMemo(() => {
     const availW = Math.max(viewport.w - RULER_SIZE, 1)
     const availH = Math.max(viewport.h - RULER_SIZE, 1)
     if (lengthUmX <= 0 || lengthUmY <= 0) return 1
     return Math.min(availW / lengthUmX, availH / lengthUmY)
   }, [viewport, lengthUmX, lengthUmY])
 
+  const scale = fitScale * viewZoom
   const pxW = lengthUmX * scale
   const pxH = lengthUmY * scale
 
@@ -221,33 +193,39 @@ export function MaskCanvas({
   )
 
   const selected = doc.shapes.find((s) => s.id === selectedId) ?? null
-  const selBox = selected ? boundsOf(selected) : null
+  const selFrame = selected ? framePointsOf(selected) : null
 
   // Handle positions (screen px relative to canvas top-left).
   const handles: { id: HandleId; x: number; y: number }[] = useMemo(() => {
-    if (!selBox) return []
-    const x0 = selBox.x * scale
-    const y0 = selBox.y * scale
-    const x1 = (selBox.x + selBox.w) * scale
-    const y1 = (selBox.y + selBox.h) * scale
-    const mx = (x0 + x1) / 2
-    const my = (y0 + y1) / 2
+    if (!selected || !selFrame) return []
+    const [nw, ne, se, sw] = selFrame
+    const origin = rotationOriginOf(selected)
+    const vx = ne.x - origin.x
+    const vy = ne.y - origin.y
+    const len = Math.hypot(vx, vy) || 1
+    const rotate = {
+      x: ne.x + (vx / len) * (ROTATE_HANDLE_OFFSET_PX / scale),
+      y: ne.y + (vy / len) * (ROTATE_HANDLE_OFFSET_PX / scale),
+    }
+    const screen = (p: Point) => ({ x: p.x * scale, y: p.y * scale })
     return [
-      { id: 'nw', x: x0, y: y0 },
-      { id: 'n', x: mx, y: y0 },
-      { id: 'ne', x: x1, y: y0 },
-      { id: 'e', x: x1, y: my },
-      { id: 'se', x: x1, y: y1 },
-      { id: 's', x: mx, y: y1 },
-      { id: 'sw', x: x0, y: y1 },
-      { id: 'w', x: x0, y: my },
+      { id: 'nw', ...screen(nw) },
+      { id: 'ne', ...screen(ne) },
+      { id: 'se', ...screen(se) },
+      { id: 'sw', ...screen(sw) },
+      { id: 'rotate', ...screen(rotate) },
     ]
-  }, [selBox, scale])
+  }, [selected, selFrame, scale])
 
   const hitHandle = useCallback(
     (umX: number, umY: number): HandleId | null => {
-      const tolUm = HANDLE_PX / scale
-      for (const h of handles) {
+      // Handles are painted in array order. When thin shapes collapse handles
+      // onto each other, hit-test in reverse paint order so the visible topmost
+      // handle is the one that responds.
+      for (let i = handles.length - 1; i >= 0; i--) {
+        const h = handles[i]
+        const hitPx = h.id === 'se' ? PRIMARY_HANDLE_PX : HANDLE_PX
+        const tolUm = hitPx / scale
         const hx = h.x / scale
         const hy = h.y / scale
         if (Math.abs(umX - hx) <= tolUm && Math.abs(umY - hy) <= tolUm) {
@@ -263,8 +241,7 @@ export function MaskCanvas({
     (umX: number, umY: number): Shape | null => {
       // topmost first
       for (let i = doc.shapes.length - 1; i >= 0; i--) {
-        const b = boundsOf(doc.shapes[i])
-        if (umX >= b.x && umX <= b.x + b.w && umY >= b.y && umY <= b.y + b.h) {
+        if (pointInShape({ x: umX, y: umY }, doc.shapes[i])) {
           return doc.shapes[i]
         }
       }
@@ -276,16 +253,22 @@ export function MaskCanvas({
   // --- pointer handlers ---
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (tool === 'zoomIn' || tool === 'zoomOut') {
+        e.preventDefault()
+        onViewZoom(tool)
+        return
+      }
+
       const { x: umX, y: umY } = pointerToUm(e)
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 
-      // Pattern tools (ストライプ/グリッド) are added from their side form;
-      // on the canvas they behave like select so the result can be moved.
       const isCreate =
         tool === 'rect' ||
         tool === 'ellipse' ||
         tool === 'line' ||
-        tool === 'text'
+        tool === 'text' ||
+        tool === 'lineSpace' ||
+        tool === 'grid'
 
       if (!isCreate) {
         // resize handle?
@@ -293,13 +276,30 @@ export function MaskCanvas({
           const h = hitHandle(umX, umY)
           if (h) {
             onBeginEdit?.()
+            if (h === 'rotate') {
+              const origin = rotationOriginOf(selected)
+              dragRef.current = {
+                mode: 'rotate',
+                shapeId: selected.id,
+                handle: h,
+                originShape: selected,
+                startUmX: umX,
+                startUmY: umY,
+                origin: shapeBounds(selected),
+                rotationOrigin: origin,
+                startAngleDeg: Math.atan2(umY - origin.y, umX - origin.x) * 180 / Math.PI,
+                startRotationDeg: shapeRotationDeg(selected),
+              }
+              return
+            }
             dragRef.current = {
               mode: 'resize',
               shapeId: selected.id,
               handle: h,
+              originShape: selected,
               startUmX: umX,
               startUmY: umY,
-              origin: boundsOf(selected),
+              origin: shapeBounds(selected),
             }
             return
           }
@@ -311,9 +311,10 @@ export function MaskCanvas({
           dragRef.current = {
             mode: 'move',
             shapeId: hit.id,
+            originShape: hit,
             startUmX: umX,
             startUmY: umY,
-            origin: boundsOf(hit),
+            origin: shapeBounds(hit),
           }
         } else {
           onSelect(null)
@@ -331,7 +332,7 @@ export function MaskCanvas({
       }
       setPreview({ x: umX, y: umY, w: 0, h: 0 })
     },
-    [tool, selected, hitHandle, hitShape, onSelect, pointerToUm, onBeginEdit],
+    [tool, selected, hitHandle, hitShape, onSelect, pointerToUm, onBeginEdit, onViewZoom],
   )
 
   const onPointerMove = useCallback(
@@ -354,39 +355,47 @@ export function MaskCanvas({
       if (!drag.shapeId) return
       const shape = doc.shapes.find((s) => s.id === drag.shapeId)
       if (!shape) return
+      const originShape = drag.originShape ?? shape
 
       if (drag.mode === 'move') {
         // Keep the shape's bounding box inside the substrate field.
-        const maxX = Math.max(0, lengthUmX - drag.origin.w)
-        const maxY = Math.max(0, lengthUmY - drag.origin.h)
-        onUpdate(shape.id, patchFromBox(shape, {
-          ...drag.origin,
-          x: clamp(drag.origin.x + dx, 0, maxX),
-          y: clamp(drag.origin.y + dy, 0, maxY),
-        }))
+        const minDx = -drag.origin.x
+        const minDy = -drag.origin.y
+        const maxDx = lengthUmX - (drag.origin.x + drag.origin.w)
+        const maxDy = lengthUmY - (drag.origin.y + drag.origin.h)
+        onUpdate(
+          shape.id,
+          moveShapeBy(
+            originShape,
+            clamp(dx, minDx, maxDx),
+            clamp(dy, minDy, maxDy),
+          ),
+        )
+        return
+      }
+
+      if (drag.mode === 'rotate') {
+        const origin = drag.rotationOrigin
+        if (!origin || drag.startAngleDeg == null || drag.startRotationDeg == null) {
+          return
+        }
+        const angleDeg = Math.atan2(umY - origin.y, umX - origin.x) * 180 / Math.PI
+        onUpdate(
+          shape.id,
+          rotateShapeTo(originShape, drag.startRotationDeg + angleDeg - drag.startAngleDeg),
+        )
         return
       }
 
       if (drag.mode === 'resize' && drag.handle) {
-        const b = { ...drag.origin }
-        const right = drag.origin.x + drag.origin.w
-        const bottom = drag.origin.y + drag.origin.h
-        const h = drag.handle
-        if (h.includes('w')) {
-          b.x = clamp(drag.origin.x + dx, 0, right - MIN_UM)
-          b.w = right - b.x
-        }
-        if (h.includes('e')) {
-          b.w = clamp(drag.origin.w + dx, MIN_UM, lengthUmX - drag.origin.x)
-        }
-        if (h.includes('n')) {
-          b.y = clamp(drag.origin.y + dy, 0, bottom - MIN_UM)
-          b.h = bottom - b.y
-        }
-        if (h.includes('s')) {
-          b.h = clamp(drag.origin.h + dy, MIN_UM, lengthUmY - drag.origin.y)
-        }
-        onUpdate(shape.id, patchFromBox(shape, b))
+        onUpdate(
+          shape.id,
+          resizeShapeFromCorner(
+            originShape,
+            drag.handle as CornerHandle,
+            { x: umX, y: umY },
+          ),
+        )
       }
     },
     [doc.shapes, onUpdate, pointerToUm, lengthUmX, lengthUmY],
@@ -428,54 +437,75 @@ export function MaskCanvas({
         startY,
         defaults,
         isClick,
+        t('mask.text.default'),
       )
       if (made) {
         onAdd(made)
         onToolChange('select')
       }
     },
-    [tool, defaults, scale, onAdd, onToolChange, pointerToUm, lengthUmX, lengthUmY],
+    [tool, defaults, scale, onAdd, onToolChange, pointerToUm, lengthUmX, lengthUmY, t],
   )
 
   // Delete key removes selection.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
-      const target = e.target as HTMLElement | null
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return
-      }
-      if (selectedId) {
-        e.preventDefault()
-        onDelete(selectedId)
-      }
+  const handleDeleteKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    const target = e.target as HTMLElement | null
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable)
+    ) {
+      return
     }
+    if (selectedId) {
+      e.preventDefault()
+      onDelete(selectedId)
+    }
+  })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => handleDeleteKey(e)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedId, onDelete])
+  }, [])
 
   const isCreateTool =
     tool === 'rect' ||
     tool === 'ellipse' ||
     tool === 'line' ||
-    tool === 'text'
-  const cursor = isCreateTool ? 'crosshair' : 'default'
+    tool === 'text' ||
+    tool === 'lineSpace' ||
+    tool === 'grid'
+  const cursor =
+    tool === 'zoomIn'
+      ? 'zoom-in'
+      : tool === 'zoomOut'
+        ? 'zoom-out'
+        : isCreateTool
+          ? 'crosshair'
+          : 'default'
+  const selectionPoints = selFrame
+    ? selFrame.map((p) => `${p.x * scale},${p.y * scale}`).join(' ')
+    : ''
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <div
         ref={wrapRef}
-        className="relative min-h-0 w-full flex-1 overflow-hidden"
+        className="relative min-h-0 w-full flex-1 overflow-auto"
       >
         {pxW >= 1 && pxH >= 1 && (
           <div
-            className="absolute inset-0"
-            style={{ display: 'grid', gridTemplateColumns: `${RULER_SIZE}px auto`, gridTemplateRows: `${RULER_SIZE}px auto` }}
+            className="relative"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `${RULER_SIZE}px ${pxW}px`,
+              gridTemplateRows: `${RULER_SIZE}px ${pxH}px`,
+              width: RULER_SIZE + pxW,
+              height: RULER_SIZE + pxH,
+            }}
           >
             {/* corner */}
             <div className="border-b border-r border-border bg-muted" />
@@ -513,12 +543,9 @@ export function MaskCanvas({
                 width={pxW}
                 height={pxH}
               >
-                {selBox && (
-                  <rect
-                    x={selBox.x * scale}
-                    y={selBox.y * scale}
-                    width={selBox.w * scale}
-                    height={selBox.h * scale}
+                {selFrame && (
+                  <polygon
+                    points={selectionPoints}
                     fill="none"
                     stroke={ACCENT}
                     strokeWidth={1.5}
@@ -526,18 +553,34 @@ export function MaskCanvas({
                   />
                 )}
                 {tool === 'select' &&
-                  handles.map((h) => (
-                    <rect
-                      key={h.id}
-                      x={h.x - HANDLE_PX / 2}
-                      y={h.y - HANDLE_PX / 2}
-                      width={HANDLE_PX}
-                      height={HANDLE_PX}
-                      fill="#ffffff"
-                      stroke={ACCENT}
-                      strokeWidth={1.5}
-                    />
-                  ))}
+                  handles.map((h) => {
+                    if (h.id === 'rotate') {
+                      return (
+                      <circle
+                        key={h.id}
+                        cx={h.x}
+                        cy={h.y}
+                        r={HANDLE_PX / 2 - 1}
+                        fill="#ffffff"
+                        stroke={ACCENT}
+                        strokeWidth={1.5}
+                      />
+                      )
+                    }
+                    const size = h.id === 'se' ? PRIMARY_HANDLE_PX : HANDLE_PX
+                    return (
+                      <rect
+                        key={h.id}
+                        x={h.x - size / 2}
+                        y={h.y - size / 2}
+                        width={size}
+                        height={size}
+                        fill={h.id === 'se' ? ACCENT : '#ffffff'}
+                        stroke={ACCENT}
+                        strokeWidth={1.5}
+                      />
+                    )
+                  })}
                 {preview && (preview.w > 0 || preview.h > 0) && (
                   <rect
                     x={preview.x * scale}
@@ -559,6 +602,10 @@ export function MaskCanvas({
   )
 }
 
+export function MaskCanvas(props: MaskCanvasProps) {
+  return useMaskCanvasView(props)
+}
+
 /**
  * Build a shape from the create gesture for the active tool. On a click
  * (`isClick`) the shape takes its default size, centred on the click point;
@@ -571,6 +618,7 @@ function createShape(
   startY: number,
   defaults: ToolDefaults,
   isClick: boolean,
+  defaultText: string,
 ): Shape | null {
   const w = Math.max(box.w, MIN_UM)
   const h = Math.max(box.h, MIN_UM)
@@ -638,24 +686,61 @@ function createShape(
         kind: 'text',
         x: startX,
         y: startY,
-        text: 'テキスト',
+        text: defaultText,
         heightUm,
       }
       return shape
     }
     case 'lineSpace': {
-      const horizontal = box.w >= box.h
-      const lengthUm = Math.max(horizontal ? box.w : box.h, 10)
+      const lineWidthUm = Math.max(MIN_LINE_UM, defaults.lineSpace.lineWidthUm)
+      const spaceUm = Math.max(0, defaults.lineSpace.spaceUm)
+      const orientation = defaults.lineSpace.orientation
+      const count = isClick
+        ? Math.max(1, Math.round(defaults.lineSpace.count))
+        : countForSpan(
+            orientation === 'vertical' ? box.w : box.h,
+            lineWidthUm,
+            spaceUm,
+          )
+      const lengthUm = isClick
+        ? Math.max(MIN_UM, defaults.lineSpace.lengthUm)
+        : Math.max(orientation === 'vertical' ? box.h : box.w, MIN_UM)
+      const spanUm = patternSpan(count, lineWidthUm, spaceUm)
+      const widthUm = orientation === 'vertical' ? spanUm : lengthUm
+      const heightUm = orientation === 'vertical' ? lengthUm : spanUm
       const shape: LineSpaceShape = {
         id: newId('ls-'),
         kind: 'lineSpace',
-        x: box.x,
-        y: box.y,
-        lineWidthUm: 5,
-        spaceUm: 5,
-        count: 5,
-        orientation: horizontal ? 'vertical' : 'horizontal',
+        x: isClick ? Math.max(0, startX - widthUm / 2) : box.x,
+        y: isClick ? Math.max(0, startY - heightUm / 2) : box.y,
+        lineWidthUm,
+        spaceUm,
+        count,
+        orientation,
         lengthUm,
+      }
+      return shape
+    }
+    case 'grid': {
+      const lineWidthUm = Math.max(MIN_LINE_UM, defaults.grid.lineWidthUm)
+      const spaceUm = Math.max(0, defaults.grid.spaceUm)
+      const cols = isClick
+        ? Math.max(1, Math.round(defaults.grid.cols))
+        : countForSpan(box.w, lineWidthUm, spaceUm)
+      const rows = isClick
+        ? Math.max(1, Math.round(defaults.grid.rows))
+        : countForSpan(box.h, lineWidthUm, spaceUm)
+      const widthUm = patternSpan(cols, lineWidthUm, spaceUm)
+      const heightUm = patternSpan(rows, lineWidthUm, spaceUm)
+      const shape: GridShape = {
+        id: newId('grid-'),
+        kind: 'grid',
+        x: isClick ? Math.max(0, startX - widthUm / 2) : box.x,
+        y: isClick ? Math.max(0, startY - heightUm / 2) : box.y,
+        lineWidthUm,
+        spaceUm,
+        cols,
+        rows,
       }
       return shape
     }

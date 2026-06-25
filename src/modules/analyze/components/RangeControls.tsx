@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { NumberField } from '@/components/app/NumberField'
@@ -148,7 +147,7 @@ function Axis({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <Label className="text-muted-foreground">{label}</Label>
+        <span className="text-sm font-medium text-muted-foreground">{label}</span>
         <span className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             log

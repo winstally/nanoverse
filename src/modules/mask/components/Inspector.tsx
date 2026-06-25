@@ -1,6 +1,6 @@
 'use client'
 
-import { Trash2 } from 'lucide-react'
+import { FlipHorizontal2, FlipVertical2, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,8 @@ import {
   Shape,
   TextShape,
 } from '@/modules/mask/shape'
+import { MessageKey } from '@/lib/i18n'
+import { useI18n } from '@/components/app/I18nProvider'
 
 interface InspectorProps {
   shape: Shape | null
@@ -20,12 +22,12 @@ interface InspectorProps {
   onDelete: (id: string) => void
 }
 
-const KIND_LABEL: Record<Shape['kind'], string> = {
-  rect: '矩形',
-  ellipse: '楕円',
-  text: '文字',
-  lineSpace: 'ストライプ',
-  grid: 'グリッド',
+const KIND_LABEL_KEY: Record<Shape['kind'], MessageKey> = {
+  rect: 'mask.tool.rect',
+  ellipse: 'mask.tool.ellipse',
+  text: 'mask.tool.text',
+  lineSpace: 'mask.tool.lineSpace',
+  grid: 'mask.tool.grid',
 }
 
 /**
@@ -33,6 +35,7 @@ const KIND_LABEL: Record<Shape['kind'], string> = {
  * inspector — this now lives inside the single left panel's context section.
  */
 export function Inspector({ shape, onUpdate, onDelete }: InspectorProps) {
+  const { t } = useI18n()
   if (!shape) return null
 
   const set = (patch: Partial<Shape>) => onUpdate(shape.id, patch)
@@ -40,7 +43,7 @@ export function Inspector({ shape, onUpdate, onDelete }: InspectorProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <SectionLabel>{KIND_LABEL[shape.kind]}</SectionLabel>
+        <SectionLabel>{t(KIND_LABEL_KEY[shape.kind])}</SectionLabel>
         <Button
           variant="ghost"
           size="xs"
@@ -48,7 +51,7 @@ export function Inspector({ shape, onUpdate, onDelete }: InspectorProps) {
           className="-mr-1 text-muted-foreground hover:text-destructive"
         >
           <Trash2 />
-          削除
+          {t('mask.deleteShape')}
         </Button>
       </div>
 
@@ -60,14 +63,14 @@ export function Inspector({ shape, onUpdate, onDelete }: InspectorProps) {
       {(shape.kind === 'rect' || shape.kind === 'ellipse') && (
         <div className="grid grid-cols-2 gap-2">
           <NumberField
-            label="幅 W"
+            label={t('mask.field.width')}
             unit="µm"
             value={shape.w}
             min={0}
             onChange={(w) => set({ w: Math.max(0, w) })}
           />
           <NumberField
-            label="高さ H"
+            label={t('mask.field.height')}
             unit="µm"
             value={shape.h}
             min={0}
@@ -76,19 +79,38 @@ export function Inspector({ shape, onUpdate, onDelete }: InspectorProps) {
         </div>
       )}
 
-      {shape.kind === 'rect' && (
-        <NumberField
-          label="回転"
-          unit="°"
-          value={shape.rotationDeg ?? 0}
-          step={1}
-          onChange={(rotationDeg) => set({ rotationDeg })}
-        />
-      )}
-
       {shape.kind === 'text' && <TextFields shape={shape} set={set} />}
       {shape.kind === 'lineSpace' && <LineSpaceFields shape={shape} set={set} />}
       {shape.kind === 'grid' && <GridFields shape={shape} set={set} />}
+
+      <NumberField
+        label={t('mask.field.rotation')}
+        unit="°"
+        value={shape.rotationDeg ?? 0}
+        step={1}
+        onChange={(rotationDeg) => set({ rotationDeg })}
+      />
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          variant={shape.flipX ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => set({ flipX: !(shape.flipX ?? false) } as Partial<Shape>)}
+          title={t('mask.flipHorizontal')}
+        >
+          <FlipHorizontal2 />
+          {t('mask.flipHorizontalShort')}
+        </Button>
+        <Button
+          variant={shape.flipY ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => set({ flipY: !(shape.flipY ?? false) } as Partial<Shape>)}
+          title={t('mask.flipVertical')}
+        >
+          <FlipVertical2 />
+          {t('mask.flipVerticalShort')}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -100,11 +122,12 @@ function TextFields({
   shape: TextShape
   set: (patch: Partial<Shape>) => void
 }) {
+  const { t } = useI18n()
   return (
     <>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="shape-text" className="text-muted-foreground">
-          内容
+          {t('mask.field.content')}
         </Label>
         <Input
           id="shape-text"
@@ -113,7 +136,7 @@ function TextFields({
         />
       </div>
       <NumberField
-        label="文字高さ"
+        label={t('mask.field.textHeight')}
         unit="µm"
         value={shape.heightUm}
         min={0.1}
@@ -121,7 +144,7 @@ function TextFields({
       />
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="shape-font" className="text-muted-foreground">
-          フォント
+          {t('mask.field.font')}
         </Label>
         <Input
           id="shape-font"
@@ -141,11 +164,12 @@ function LineSpaceFields({
   shape: LineSpaceShape
   set: (patch: Partial<Shape>) => void
 }) {
+  const { t } = useI18n()
   return (
     <>
       <div className="grid grid-cols-2 gap-2">
         <NumberField
-          label="線幅"
+          label={t('mask.field.lineWidth')}
           unit="µm"
           value={shape.lineWidthUm}
           min={0.1}
@@ -153,7 +177,7 @@ function LineSpaceFields({
           onChange={(lineWidthUm) => set({ lineWidthUm: Math.max(0.1, lineWidthUm) })}
         />
         <NumberField
-          label="間隔"
+          label={t('mask.field.space')}
           unit="µm"
           value={shape.spaceUm}
           min={0}
@@ -163,14 +187,14 @@ function LineSpaceFields({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <NumberField
-          label="本数"
+          label={t('mask.field.count')}
           value={shape.count}
           min={1}
           step={1}
           onChange={(count) => set({ count: Math.max(1, Math.round(count)) })}
         />
         <NumberField
-          label="長さ"
+          label={t('mask.field.length')}
           unit="µm"
           value={shape.lengthUm}
           min={0.1}
@@ -178,7 +202,7 @@ function LineSpaceFields({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground">向き</Label>
+        <span className="text-sm font-medium text-muted-foreground">{t('mask.orientation')}</span>
         <ToggleGroup
           value={[shape.orientation === 'vertical' ? 'v' : 'h']}
           onValueChange={(next) => {
@@ -188,23 +212,16 @@ function LineSpaceFields({
           variant="outline"
           spacing={0}
           className="grid w-full grid-cols-2"
-          aria-label="向き"
+          aria-label={t('mask.orientation')}
         >
           <ToggleGroupItem value="v" className="data-[state=on]:!bg-primary data-[state=on]:!text-primary-foreground">
-            縦線
+            {t('mask.orientation.vertical')}
           </ToggleGroupItem>
           <ToggleGroupItem value="h" className="data-[state=on]:!bg-primary data-[state=on]:!text-primary-foreground">
-            横線
+            {t('mask.orientation.horizontal')}
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-      <NumberField
-        label="回転"
-        unit="°"
-        value={shape.rotationDeg ?? 0}
-        step={1}
-        onChange={(rotationDeg) => set({ rotationDeg })}
-      />
     </>
   )
 }
@@ -216,11 +233,12 @@ function GridFields({
   shape: GridShape
   set: (patch: Partial<Shape>) => void
 }) {
+  const { t } = useI18n()
   return (
     <>
       <div className="grid grid-cols-2 gap-2">
         <NumberField
-          label="線幅"
+          label={t('mask.field.lineWidth')}
           unit="µm"
           value={shape.lineWidthUm}
           min={0.1}
@@ -228,7 +246,7 @@ function GridFields({
           onChange={(lineWidthUm) => set({ lineWidthUm: Math.max(0.1, lineWidthUm) })}
         />
         <NumberField
-          label="間隔"
+          label={t('mask.field.space')}
           unit="µm"
           value={shape.spaceUm}
           min={0}
@@ -238,27 +256,20 @@ function GridFields({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <NumberField
-          label="列"
+          label={t('mask.field.cols')}
           value={shape.cols}
           min={1}
           step={1}
           onChange={(cols) => set({ cols: Math.max(1, Math.round(cols)) })}
         />
         <NumberField
-          label="行"
+          label={t('mask.field.rows')}
           value={shape.rows}
           min={1}
           step={1}
           onChange={(rows) => set({ rows: Math.max(1, Math.round(rows)) })}
         />
       </div>
-      <NumberField
-        label="回転"
-        unit="°"
-        value={shape.rotationDeg ?? 0}
-        step={1}
-        onChange={(rotationDeg) => set({ rotationDeg })}
-      />
     </>
   )
 }
